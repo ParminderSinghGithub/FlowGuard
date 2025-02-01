@@ -1,0 +1,4 @@
+Mean Squared Error (MSE): 6.5455
+Mean Absolute Error (MAE): 1.5171
+Mean Absolute Percentage Error (MAPE): 0.2116
+Model Accuracy: 78.84%
