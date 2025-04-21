@@ -19,10 +19,10 @@ class Command(BaseCommand):
 
         # Get data with proper time filtering
         qs = TrafficData.objects.filter(
-            timestamp__gte=timezone.now()-timedelta(days=1)
+            timestamp__gte=timezone.now()-timedelta(days=10)
         ).values('timestamp', 'latitude', 'longitude', 'current_speed', 'free_flow_speed')
         
-        self.stdout.write(f"Found {qs.count()} records in last 24 hours")
+        self.stdout.write(f"Found {qs.count()} records till now")
         
         df = pd.DataFrame.from_records(qs)  # Changed from DataFrame()
         
