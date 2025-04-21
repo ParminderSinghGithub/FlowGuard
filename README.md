@@ -6,7 +6,7 @@ _An in-progress traffic congestion prediction and route optimization system for 
 
 Explore the interactive Streamlit dashboard showcasing real-time traffic visualization and route suggestions:
 
-[📊 View Live Demo]()
+[📊 View Live Demo](https://parmindersinghgithub-flowguard-serverapptflite-modelmain-sy0tzv.streamlit.app/#fe339b6c)
 ![Demo](demo.gif)
 ---
 
