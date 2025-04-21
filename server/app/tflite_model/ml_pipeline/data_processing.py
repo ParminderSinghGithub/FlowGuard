@@ -1,36 +1,48 @@
-# /ml_pipeline/data_processing.py
-import pandas as pd
+from django.apps import apps
 from sklearn.preprocessing import MinMaxScaler
+import joblib
+import numpy as np
+import os
+import warnings
 
-def load_and_clean_data(csv_file):
-    # Load the data
-    df = pd.read_csv(csv_file)
-    
-    # Convert DateTime to datetime object
-    df['DateTime'] = pd.to_datetime(df['DateTime'])
-    
-    # Extract time-related features
-    df['Hour'] = df['DateTime'].dt.hour
-    df['DayOfWeek'] = df['DateTime'].dt.dayofweek
-    df['IsWeekend'] = df['DayOfWeek'].apply(lambda x: 1 if x >= 5 else 0)
-    
-    # Drop duplicates and missing values
-    df.drop_duplicates(inplace=True)
-    df.dropna(inplace=True)
-    
-    # Normalize the 'Vehicles' column for ML model
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    df['Vehicles_Normalized'] = scaler.fit_transform(df[['Vehicles']])
-    
-    return df, scaler
+class RealTimeDataProcessor:
+    def __init__(self, scaler_path=None):
+        # Initialize with default scaler
+        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        self.scaler.fit([[0], [100]])  # Default range 0-100 km/h
+        
+        # Try to load scaler if path provided
+        if scaler_path and os.path.exists(scaler_path):
+            try:
+                self.scaler = joblib.load(scaler_path)
+            except Exception as e:
+                warnings.warn(f"Could not load scaler: {e}. Using default scaler.")
+        
+        # Road network features (optional)
+        self.road_network = {}
 
-if __name__ == "__main__":
-    # Specify input CSV file
-    csv_file = "traffic_data.csv"
-    
-    # Process the data
-    cleaned_data, scaler = load_and_clean_data(csv_file)
-    
-    # Save cleaned data to a new CSV file
-    cleaned_data.to_csv("cleaned_data.csv", index=False)
-    print("Cleaned data saved to 'cleaned_data.csv'")
+    def process_record(self, data_point):
+        """Process single TrafficData record"""
+        # Get speeds with defaults
+        current_speed = data_point.current_speed
+        free_flow_speed = data_point.free_flow_speed if data_point.free_flow_speed > 0 else current_speed
+        
+        # Use TrafficData's own ID as the segment identifier
+        road_segment_id = str(data_point.id)
+        
+        # Process the data
+        processed = {
+            'timestamp': data_point.timestamp,
+            'road_segment_id': road_segment_id,
+            'current_speed': current_speed,
+            'normalized_speed': self.scaler.transform([[current_speed]])[0][0],
+            'free_flow_ratio': current_speed / free_flow_speed if free_flow_speed else 1.0,
+            'is_bottleneck': data_point.is_bottleneck,
+            'confidence': data_point.confidence_score,
+            'latitude': float(data_point.latitude),
+            'longitude': float(data_point.longitude),
+            'road_type': data_point.road_type,
+            'location': data_point.location
+        }
+        
+        return processed

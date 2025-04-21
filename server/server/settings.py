@@ -11,16 +11,26 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+from kombu import Queue
+from celery.schedules import crontab
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+if os.name == 'nt':  # Windows
+    GDAL_LIBRARY_PATH = r'C:\path\to\gdal304.dll'  # Update with your actual path
+    GEOS_LIBRARY_PATH = r'C:\path\to\geos_c.dll'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
+env_path = os.path.join(BASE_DIR, '../.env')
+load_dotenv(env_path)
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-3!=@n9umf71m*-&$(5qzsqpq-injyu49k@e1+ahgu$%&cd6^$l'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -39,6 +49,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'app.apps.AppConfig',
     'rest_framework',
+    'django_celery_beat',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -77,8 +89,16 @@ WSGI_APPLICATION = 'server.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',  # Database file
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER', 'root'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),  
+        'PORT': os.getenv('DB_PORT', '3306'),       
+        'OPTIONS': {
+            'connect_timeout': 30,
+            'init_command': 'SET innodb_lock_wait_timeout=30;',
+        }
     }
 }
 
@@ -102,12 +122,64 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = 'app.User'
 
+# Traffic API Key
+TOMTOM_API_KEY = os.getenv('TOMTOM_API_KEY')
+
+#  ─── Celery / RabbitMQ ─────────────────────────────────────
+CELERY_BROKER_URL                 = 'amqp://guest:guest@localhost:5672//'
+CELERY_RESULT_BACKEND             = 'rpc://'   # RPC backend
+CELERY_ACCEPT_CONTENT             = ['json']
+CELERY_TASK_SERIALIZER            = 'json'
+CELERY_RESULT_EXTENDED            = True
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+CELERY_BEAT_SCHEDULER             = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TIMEZONE                   = 'Asia/Kolkata'
+CELERY_TASK_DEFAULT_QUEUE         = 'default'
+CELERY_TASK_QUEUES                = ( Queue('default', routing_key='default'), )
+CELERY_TASK_ACKS_LATE             = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_POOL_LIMIT          = None
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 5
+CELERY_BROKER_CONNECTION_RETRY    = True
+CELERY_BROKER_CONNECTION_TIMEOUT  = 30
+CELERY_WORKER_POOL                = 'solo'   # Windows
+
+#  ─── Django Cache (avoid NoneType ping errors) ────────────
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+    }
+}
+
+#  ─── Celery Beat Schedule ───────────────────────────────────
+CELERY_BEAT_SCHEDULE = {
+    'fetch-ludhiana-traffic': {
+        'task': 'app.tasks.fetch_ludhiana_traffic',
+        'schedule': crontab(minute='*/2'),
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
+}
+
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
 

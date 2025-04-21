@@ -5,6 +5,3 @@ from .models import User, TrafficData, CongestionPrediction, Route, PotholeRepor
 admin.site.register(User)
 admin.site.register(TrafficData)
 admin.site.register(CongestionPrediction)
-admin.site.register(Notification)
-admin.site.register(PotholeReport)
-admin.site.register(Route)

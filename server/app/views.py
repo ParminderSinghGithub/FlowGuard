@@ -6,6 +6,7 @@ import pandas as pd
 import tensorflow as tf
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from sklearn.preprocessing import MinMaxScaler
 from rest_framework import viewsets, status
@@ -16,85 +17,86 @@ from .serializers import (
     UserSerializer, TrafficDataSerializer, CongestionPredictionSerializer,
     PotholeReportSerializer, NotificationSerializer, RouteSerializer
 )
+from .traffic_apis.tomtom import get_ludhiana_traffic  # Ludhiana-specific API
 
-# Load the TFLite model
-TFLITE_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'tflite_model/traffic_lstm_model.tflite')
+# Load TFLite model (Ludhiana-trained)
+TFLITE_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'tflite_model/models/traffic_lstm_model.tflite')
 interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
 interpreter.allocate_tensors()
-
-# Get input and output details
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
+# Load MinMaxScaler
+SCALER_PATH = os.path.join(os.path.dirname(__file__), 'tflite_model/scaler.pkl')
+scaler = joblib.load(SCALER_PATH)
+
+# Ludhiana-specific constants
+LUDHIANA_HOTSPOTS = [
+    (30.9000, 75.8573),  # City Center
+    (30.9158, 75.8227),  # PAU/Sarabha Nagar
+    (30.8412, 75.8573),  # Bus Stand
+    (30.8786, 75.8000)   # Dugri Rd
+]
+
 @csrf_exempt
 def predict_traffic(request):
-    """
-    API endpoint to predict traffic. Expects JSON input with original features:
-    'hour', 'day_of_week', 'is_weekend'.
-    """
+    """Predict congestion for Ludhiana hotspots using TFLite model."""
     if request.method == 'POST':
         try:
-            # Parse JSON body
-            body = json.loads(request.body.decode('utf-8'))
+            # Get real-time data from TomTom (Ludhiana)
+            traffic_data = get_ludhiana_traffic()
+            if not traffic_data:
+                return JsonResponse({"error": "Failed to fetch Ludhiana traffic data"}, status=500)
 
-            # Step 1: Retrieve historical vehicle data or simulate data
-            recent_data = list(TrafficData.objects.order_by('-timestamp')[:6])
+            # Prepare input for TFLite model
+            input_array = []
+            for segment in traffic_data:
+                # Use normalized speed ratio as feature
+                speed_ratio = segment['speeds']['current'] / segment['speeds']['free_flow']
+                input_array.append([speed_ratio])
+            
+            input_array = np.array(input_array[-3:], dtype=np.float32)  # Last 3 timesteps
+            input_array = np.expand_dims(input_array, axis=0)  # Shape: (1, 3, 1)
 
-            if len(recent_data) < 6:
-                # Simulate dynamic data based on input hour for variety
-                hour = body['hour']
-                simulated_vehicles = [10 + hour % 5, 15 + hour % 7, 20 + hour % 3, 25, 18, 12]
-                recent_data = [{'vehicles': v} for v in simulated_vehicles[:6]]
-
-            # Create DataFrame for feature engineering
-            df = pd.DataFrame({
-                'Hour': [body['hour']] * len(recent_data),
-                'DayOfWeek': [body['day_of_week']] * len(recent_data),
-                'IsWeekend': [body['is_weekend']] * len(recent_data),
-                'Vehicles': [data['vehicles'] if isinstance(data, dict) else data.vehicles for data in recent_data]
-            })
-
-            # Step 2: Normalize 'Vehicles' using a pre-trained MinMaxScaler
-            scaler = joblib.load('app/tflite_model/scaler.pkl')  # Load pre-trained scaler
-            df['Vehicles_Normalized'] = scaler.transform(df[['Vehicles']])
-
-            # Step 3: Add lag and rolling mean features
-            df['Lag_1'] = df['Vehicles_Normalized'].shift(1)
-            df['Lag_2'] = df['Vehicles_Normalized'].shift(2)
-            df['Lag_3'] = df['Vehicles_Normalized'].shift(3)
-            df['Rolling_Mean_3'] = df['Vehicles_Normalized'].rolling(window=3).mean()
-
-            # Drop NaN rows caused by shifting
-            df.dropna(inplace=True)
-
-            # Ensure sufficient rows for input preparation
-            if len(df) < 3:
-                return JsonResponse({'error': 'Not enough data for feature engineering.'}, status=400)
-
-            # Step 4: Prepare input for the model (last 3 timesteps)
-            input_array = df[['Lag_1', 'Lag_2', 'Lag_3', 'Rolling_Mean_3']].tail(3).values
-            input_array = input_array.astype(np.float32)  # Convert to float32
-            input_array = np.expand_dims(input_array, axis=0)  # Shape: (1, time_steps, features)
-
-            # Step 5: Perform prediction
+            # Predict
             interpreter.set_tensor(input_details[0]['index'], input_array)
             interpreter.invoke()
-            output_data = interpreter.get_tensor(output_details[0]['index'])
-            prediction = output_data[0][0]
+            prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
+            denormalized_pred = scaler.inverse_transform([[prediction]])[0][0]
 
-            # Step 6: Denormalize the prediction
-            denormalized_prediction = scaler.inverse_transform(np.array([[prediction]]))[0][0]
+            # Save prediction
+            latest_data = TrafficData.objects.latest('timestamp')
+            CongestionPrediction.objects.create(
+                location=latest_data,
+                predicted_congestion_level='severe' if denormalized_pred < 0.4 else 'moderate',
+                prediction_time=timezone.now(),
+                accuracy=0.95  # Placeholder
+            )
 
-            # Step 7: Return response
-            return JsonResponse({'prediction': float(denormalized_prediction)})
+            return JsonResponse({
+                "prediction": float(denormalized_pred),
+                "hotspots": [{"lat": lat, "lon": lon} for lat, lon in LUDHIANA_HOTSPOTS]
+            })
 
-        except KeyError as e:
-            return JsonResponse({'error': f'Missing parameter: {e.args[0]}'}, status=400)
         except Exception as e:
-            return JsonResponse({'error': f'Unexpected error: {str(e)}'}, status=500)
+            return JsonResponse({"error": str(e)}, status=500)
 
-    return JsonResponse({'error': 'Invalid request method. Use POST.'}, status=405)
+    return JsonResponse({"error": "POST method required"}, status=405)
 
+def test_traffic_flow(request):
+    """Test endpoint for Ludhiana traffic (TomTom)."""
+    flow_data = get_ludhiana_traffic()
+    return JsonResponse(flow_data, safe=False) if flow_data else \
+           JsonResponse({"error": "API failure"}, status=500)
+
+# ViewSets (unchanged, but ensure they use Ludhiana data filters)
+class TrafficDataViewSet(viewsets.ModelViewSet):
+    queryset = TrafficData.objects.filter(location__icontains="Ludhiana")  # Ludhiana-only
+    serializer_class = TrafficDataSerializer
+
+class CongestionPredictionViewSet(viewsets.ModelViewSet):
+    queryset = CongestionPrediction.objects.filter(location__location__icontains="Ludhiana")
+    serializer_class = CongestionPredictionSerializer
 
 # Create your views here.
 def home(request):

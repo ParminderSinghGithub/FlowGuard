@@ -15,4 +15,5 @@ urlpatterns = [
     path('', views.home, name='home'),
     path('', include(router.urls)),
     path('predict/', views.predict_traffic, name='predict_traffic'),
+    path('test-traffic-flow/', views.test_traffic_flow, name='test_traffic_flow'),
 ]
