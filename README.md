@@ -64,13 +64,13 @@ FlowGuard is designed to:
 
 ## Data Flow
 
+1. **Data Collection** → TomTom API  
+2. **Data Processing** → RealTimeDataProcessor  
+3. **Feature Engineering** → StreamFeatureGenerator  
+4. **Inference** → TFLite Model  
+5. **Route Optimization** → RouteOptimizer  
+6. **Visualization** → Streamlit Dashboard
 
-graph TD;
-    A[Data Collection (TomTom API)] --> B[Data Processing (RealTimeDataProcessor)]
-    B --> C[Feature Engineering (StreamFeatureGenerator)]
-    C --> D[Inference (TFLite Model)]
-    D --> E[Route Optimization (RouteOptimizer)]
-    E --> F[Visualization (Streamlit Dashboard)]
 
 
 
