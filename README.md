@@ -64,15 +64,13 @@ FlowGuard is designed to:
 
 ## Data Flow
 
-```mermaid
-graph TD
-    A[TomTom Traffic API] --> B[Django/Celery Data Collector]
-    B --> C[RealTimeDataProcessor]
-    C --> D[StreamFeatureGenerator]
-    D --> E[TFLite ML Model Inference]
-    E --> F[RouteOptimizer (A* + ML Heuristics)]
-    F --> G[Streamlit Dashboard Visualization]
-```
+graph TD;
+    A[Data Collection (TomTom API)] --> B[Data Processing (RealTimeDataProcessor)]
+    B --> C[Feature Engineering (StreamFeatureGenerator)]
+    C --> D[Inference (TFLite Model)]
+    D --> E[Route Optimization (RouteOptimizer)]
+    E --> F[Visualization (Streamlit Dashboard)]
+
 
 ---
 
