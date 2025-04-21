@@ -206,9 +206,13 @@ def display_route_map(start_point, end_point, waypoints=None, route_info=None, r
 
 # --- Load Data ---
 @st.cache_data(ttl=300)
-def load_data(path: str = "traffic_data.csv") -> pd.DataFrame:
+def load_data(filename: str = "traffic_data.csv") -> pd.DataFrame:
     try:
-        df = pd.read_csv(path, parse_dates=['timestamp'])
+        # Get absolute path relative to current script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(script_dir, filename)
+
+        df = pd.read_csv(file_path, parse_dates=['timestamp'])
         df['hour'] = df['timestamp'].dt.hour
         df['day'] = df['timestamp'].dt.day_name()
         df['date'] = df['timestamp'].dt.date
