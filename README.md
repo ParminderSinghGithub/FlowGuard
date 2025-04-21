@@ -64,14 +64,15 @@ FlowGuard is designed to:
 
 ## Data Flow
 
-```mermaid
+
 graph TD;
     A[Data Collection (TomTom API)] --> B[Data Processing (RealTimeDataProcessor)]
     B --> C[Feature Engineering (StreamFeatureGenerator)]
     C --> D[Inference (TFLite Model)]
     D --> E[Route Optimization (RouteOptimizer)]
     E --> F[Visualization (Streamlit Dashboard)]
-```
+
+
 
 ---
 
