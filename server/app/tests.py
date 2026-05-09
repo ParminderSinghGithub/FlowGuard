@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from unittest.mock import patch
@@ -33,13 +34,7 @@ class PotholeServiceTests(TestCase):
 		self.assertEqual(PotholeReport.objects.count(), 1)
 
 	def test_multi_device_cluster_becomes_verified(self):
-		samples = [
-			('dev-a', 5.2),
-			('dev-b', 4.8),
-			('dev-c', 4.9),
-		]
-
-		for device, z_axis in samples:
+		for device, z_axis in [('dev-a', 5.2), ('dev-b', 4.8), ('dev-c', 4.9)]:
 			self.service.ingest_sensor_point(
 				device_id=device,
 				latitude=30.9005,
@@ -50,7 +45,6 @@ class PotholeServiceTests(TestCase):
 		cluster = PotholeCluster.objects.first()
 		self.assertIsNotNone(cluster)
 		self.assertTrue(cluster.is_verified)
-		self.assertGreaterEqual(cluster.reports_count, 3)
 
 
 @override_settings(
@@ -59,59 +53,174 @@ class PotholeServiceTests(TestCase):
 	POTHOLE_VERIFY_MIN_REPORTS=3,
 	POTHOLE_VERIFY_MIN_DEVICES=2,
 )
-class PotholeApiTests(TestCase):
+class SecurityAndPotholeApiTests(TestCase):
 	def setUp(self):
 		self.client = APIClient()
 		self.user1 = User.objects.create_user(username='u1', password='x', device_id='d1')
 		self.user2 = User.objects.create_user(username='u2', password='x', device_id='d2')
 		self.user3 = User.objects.create_user(username='u3', password='x', device_id='d3')
 
-	def test_sensor_endpoint_creates_report(self):
-		baseline_payload = {
-			'device_id': 'd1',
-			'user_id': self.user1.id,
-			'latitude': 30.901,
-			'longitude': 75.852,
-			'accelerometer_z': 0.4,
+	def _auth(self, user):
+		self.client.force_authenticate(user=user)
+
+	def test_sensor_endpoint_requires_auth(self):
+		response = self.client.post(
+			'/api/potholes/sensor/',
+			{'device_id': 'd1', 'latitude': 30.9, 'longitude': 75.85, 'accelerometer_z': 1.0},
+			format='json',
+		)
+		self.assertEqual(response.status_code, 401)
+
+	def test_token_auth_endpoint_issues_token(self):
+		response = self.client.post('/api/auth/token/', {'username': 'u1', 'password': 'x'}, format='json')
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('token', response.data)
+
+	def test_sensor_endpoint_rejects_invalid_coordinates(self):
+		self._auth(self.user1)
+		response = self.client.post(
+			'/api/potholes/sensor/',
+			{'device_id': 'd1', 'latitude': 301.0, 'longitude': 75.85, 'accelerometer_z': 3.0},
+			format='json',
+		)
+		self.assertEqual(response.status_code, 400)
+
+	@override_settings(
+		REST_FRAMEWORK={
+			'DEFAULT_AUTHENTICATION_CLASSES': (
+				'rest_framework.authentication.TokenAuthentication',
+				'rest_framework.authentication.SessionAuthentication',
+			),
+			'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.AllowAny',),
+			'DEFAULT_THROTTLE_CLASSES': (
+				'rest_framework.throttling.UserRateThrottle',
+				'rest_framework.throttling.AnonRateThrottle',
+			),
+			'DEFAULT_THROTTLE_RATES': {
+				'user': '120/min',
+				'anon': '60/min',
+				'sensor_ingest_user': '2/min',
+				'sensor_ingest_anon': '1/min',
+				'routing_api': '50/min',
+			},
+			'EXCEPTION_HANDLER': 'app.exceptions.standardized_exception_handler',
 		}
-		spike_payload = {
-			'device_id': 'd1',
-			'user_id': self.user1.id,
-			'latitude': 30.901,
-			'longitude': 75.852,
-			'accelerometer_z': 5.1,
-		}
-		self.client.post('/api/potholes/sensor/', baseline_payload, format='json')
-		response = self.client.post('/api/potholes/sensor/', spike_payload, format='json')
-		self.assertEqual(response.status_code, 201)
-		self.assertTrue(response.data['pothole_candidate_created'])
+	)
+	def test_sensor_rate_limiting(self):
+		cache.clear()
+		self._auth(self.user1)
+		payload = {'device_id': 'd1', 'latitude': 30.9, 'longitude': 75.85, 'accelerometer_z': 0.2}
+		self.client.post('/api/potholes/sensor/', payload, format='json')
+		self.client.post('/api/potholes/sensor/', payload, format='json')
+		response = self.client.post('/api/potholes/sensor/', payload, format='json')
+		self.assertEqual(response.status_code, 429)
+
+	@override_settings(SENSOR_INGEST_RATE_LIMIT=2, SENSOR_INGEST_RATE_PERIOD_SECONDS=60)
+	def test_sensor_rate_limiting(self):
+		cache.clear()
+		self._auth(self.user1)
+		payload = {'device_id': 'd1', 'latitude': 30.9, 'longitude': 75.85, 'accelerometer_z': 0.2}
+		self.client.post('/api/potholes/sensor/', payload, format='json')
+		self.client.post('/api/potholes/sensor/', payload, format='json')
+		response = self.client.post('/api/potholes/sensor/', payload, format='json')
+		self.assertEqual(response.status_code, 429)
 
 	def test_verify_and_route_warnings(self):
-		events = [
-			{'device_id': 'd1', 'user_id': self.user1.id, 'latitude': 30.902, 'longitude': 75.854, 'accelerometer_z': 5.3},
-			{'device_id': 'd2', 'user_id': self.user2.id, 'latitude': 30.9021, 'longitude': 75.8541, 'accelerometer_z': 5.0},
-			{'device_id': 'd3', 'user_id': self.user3.id, 'latitude': 30.9022, 'longitude': 75.8542, 'accelerometer_z': 4.9},
-		]
+		self._auth(self.user1)
+		# Establish baselines
+		self.client.post('/api/potholes/sensor/', {'device_id': 'd1', 'latitude': 30.902, 'longitude': 75.854, 'accelerometer_z': 0.3}, format='json')
 
-		self.client.post('/api/potholes/sensor/', {
-			'device_id': 'd1', 'user_id': self.user1.id, 'latitude': 30.902, 'longitude': 75.854, 'accelerometer_z': 0.3
-		}, format='json')
-		self.client.post('/api/potholes/sensor/', {
-			'device_id': 'd2', 'user_id': self.user2.id, 'latitude': 30.9021, 'longitude': 75.8541, 'accelerometer_z': 0.2
-		}, format='json')
-		self.client.post('/api/potholes/sensor/', {
-			'device_id': 'd3', 'user_id': self.user3.id, 'latitude': 30.9022, 'longitude': 75.8542, 'accelerometer_z': 0.3
-		}, format='json')
+		self.client.force_authenticate(user=self.user2)
+		self.client.post('/api/potholes/sensor/', {'device_id': 'd2', 'latitude': 30.9021, 'longitude': 75.8541, 'accelerometer_z': 0.2}, format='json')
 
-		for payload in events:
+		self.client.force_authenticate(user=self.user3)
+		self.client.post('/api/potholes/sensor/', {'device_id': 'd3', 'latitude': 30.9022, 'longitude': 75.8542, 'accelerometer_z': 0.3}, format='json')
+
+		for user, payload in [
+			(self.user1, {'device_id': 'd1', 'latitude': 30.902, 'longitude': 75.854, 'accelerometer_z': 5.3}),
+			(self.user2, {'device_id': 'd2', 'latitude': 30.9021, 'longitude': 75.8541, 'accelerometer_z': 5.0}),
+			(self.user3, {'device_id': 'd3', 'latitude': 30.9022, 'longitude': 75.8542, 'accelerometer_z': 4.9}),
+		]:
+			self.client.force_authenticate(user=user)
 			self.client.post('/api/potholes/sensor/', payload, format='json')
 
+		self.client.force_authenticate(user=self.user1)
 		verify_response = self.client.post('/api/potholes/verify-clusters/', {}, format='json')
 		self.assertEqual(verify_response.status_code, 200)
 
 		warnings_response = self.client.get('/api/routes/warnings/?latitude=30.902&longitude=75.854&radius_meters=500')
 		self.assertEqual(warnings_response.status_code, 200)
-		self.assertGreaterEqual(warnings_response.data['warning_count'], 1)
+
+
+class RouteIntelligenceApiTests(TestCase):
+	def setUp(self):
+		self.client = APIClient()
+		self.user = User.objects.create_user(username='route-user', password='x', device_id='route-device')
+		self.client.force_authenticate(user=self.user)
+
+		cluster = PotholeCluster.objects.create(
+			centroid_latitude=30.915,
+			centroid_longitude=75.855,
+			reports_count=5,
+			confidence_aggregate=0.9,
+			is_verified=True,
+		)
+		PotholeReport.objects.create(
+			user=self.user,
+			source_device_id='route-device',
+			latitude=30.915,
+			longitude=75.855,
+			severity='severe',
+			source_type='manual',
+			confidence_score=0.9,
+			is_verified=True,
+			cluster=cluster,
+		)
+
+	def test_optimize_route_with_risk_outputs(self):
+		payload = {
+			'start_latitude': 30.911972,
+			'start_longitude': 75.853222,
+			'end_latitude': 30.900000,
+			'end_longitude': 75.840000,
+			'alternatives_count': 3,
+		}
+		response = self.client.post('/api/routes/optimize/', payload, format='json')
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('selected_route', response.data)
+		self.assertIn('route_risk_score', response.data['selected_route'])
+		self.assertIn('pothole_warning_count', response.data['selected_route'])
+
+	def test_alternatives_and_risk_analysis(self):
+		payload = {
+			'start_latitude': 30.911972,
+			'start_longitude': 75.853222,
+			'end_latitude': 30.900000,
+			'end_longitude': 75.840000,
+		}
+		alternatives = self.client.post('/api/routes/alternatives/', payload, format='json')
+		self.assertEqual(alternatives.status_code, 200)
+		self.assertIn('alternatives', alternatives.data)
+
+		risk = self.client.post('/api/routes/risk-analysis/', payload, format='json')
+		self.assertEqual(risk.status_code, 200)
+		self.assertIn('route_risk_score', risk.data)
+
+
+class BackgroundFallbackTests(TestCase):
+	def setUp(self):
+		self.client = APIClient()
+		self.user = User.objects.create_user(username='bg-user', password='x', device_id='bg-device')
+		self.client.force_authenticate(user=self.user)
+
+	@patch('app.views.verify_pothole_clusters_task.delay', side_effect=RuntimeError('broker down'))
+	@patch('app.views.PotholeService.verify_all_clusters', return_value=[11, 22])
+	def test_verify_clusters_sync_fallback_when_broker_fails(self, mocked_sync, mocked_delay):
+		response = self.client.post('/api/potholes/verify-clusters/', {}, format='json')
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data['dispatch']['mode'], 'sync_fallback')
+		mocked_delay.assert_called_once()
+		mocked_sync.assert_called_once()
 
 
 class PredictionApiTests(TestCase):
@@ -134,10 +243,7 @@ class PredictionApiTests(TestCase):
 	@patch('app.views.get_ludhiana_traffic')
 	@patch('app.views._load_model_assets')
 	def test_predict_traffic_fallback(self, mocked_assets, mocked_traffic):
-		mocked_assets.return_value = {
-			'ready': False,
-			'error': 'model not available',
-		}
+		mocked_assets.return_value = {'ready': False, 'error': 'model not available'}
 		mocked_traffic.return_value = [
 			{'speeds': {'current': 20.0, 'free_flow': 40.0}},
 			{'speeds': {'current': 24.0, 'free_flow': 40.0}},

@@ -2,6 +2,8 @@ import os
 import logging
 import joblib
 import numpy as np
+from django.core.cache import cache
+from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -9,15 +11,21 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import User, TrafficData, CongestionPrediction, PotholeReport, Notification, Route
 from .serializers import (
     UserSerializer, TrafficDataSerializer, CongestionPredictionSerializer,
     PotholeReportSerializer, NotificationSerializer, RouteSerializer,
     SensorIngestSerializer, NearbyPotholeQuerySerializer, RouteWarningQuerySerializer,
     PotholeClusterSerializer,
+    RouteOptimizationRequestSerializer, RouteRiskAnalysisSerializer,
 )
 from .traffic_apis.tomtom import get_ludhiana_traffic
 from .services.pothole_service import PotholeService
+from .services.route_service import RouteIntelligenceService
+from .services.background import run_task_with_fallback
+from .throttles import SensorIngestUserRateThrottle, SensorIngestAnonRateThrottle, RoutingRateThrottle
+from .tasks import verify_pothole_clusters_task
 
 logger = logging.getLogger(__name__)
 
@@ -226,16 +234,53 @@ class RouteViewSet(viewsets.ModelViewSet):
 
 
 class SensorDataIngestAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [SensorIngestUserRateThrottle, SensorIngestAnonRateThrottle]
     service = PotholeService()
 
     def post(self, request):
+        limited = self._sensor_ingest_limit(request)
+        if limited:
+            return Response(
+                {'error': {'code': 'rate_limited', 'message': 'Sensor ingestion rate limit exceeded.'}},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         serializer = SensorIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        result = self.service.ingest_sensor_point(**serializer.validated_data)
+        payload = serializer.validated_data
+        payload['user_id'] = request.user.id
+        result = self.service.ingest_sensor_point(**payload)
         return Response(result, status=status.HTTP_201_CREATED)
+
+    def _sensor_ingest_limit(self, request):
+        limit = int(getattr(settings, 'SENSOR_INGEST_RATE_LIMIT', 30))
+        window_seconds = int(getattr(settings, 'SENSOR_INGEST_RATE_PERIOD_SECONDS', 60))
+        key = f"sensor-ingest:{getattr(request.user, 'id', 'anon')}:{self._client_ip(request)}"
+        state = cache.get(key)
+        now = timezone.now().timestamp()
+
+        if not state or now - state['window_start'] >= window_seconds:
+            cache.set(key, {'window_start': now, 'count': 1}, timeout=window_seconds)
+            return False
+
+        if state['count'] >= limit:
+            return True
+
+        state['count'] += 1
+        cache.set(key, state, timeout=window_seconds)
+        return False
+
+    def _client_ip(self, request):
+        forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', 'unknown')
 
 
 class ManualPotholeReportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [SensorIngestUserRateThrottle, SensorIngestAnonRateThrottle]
     service = PotholeService()
 
     def post(self, request):
@@ -260,6 +305,7 @@ class ManualPotholeReportAPIView(APIView):
 
 
 class NearbyPotholesAPIView(APIView):
+    permission_classes = [AllowAny]
     service = PotholeService()
 
     def get(self, request):
@@ -276,14 +322,20 @@ class NearbyPotholesAPIView(APIView):
 
 
 class VerifyPotholeClustersAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     service = PotholeService()
 
     def post(self, request):
-        verified_ids = self.service.verify_all_clusters()
-        return Response({'verified_cluster_ids': verified_ids})
+        dispatch = run_task_with_fallback(
+            verify_pothole_clusters_task,
+            self.service.verify_all_clusters,
+        )
+        return Response({'dispatch': dispatch})
 
 
 class RouteWarningsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [RoutingRateThrottle]
     service = PotholeService()
 
     def get(self, request):
@@ -299,6 +351,7 @@ class RouteWarningsAPIView(APIView):
 
 
 class PredictionModelHealthAPIView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         assets = _load_model_assets()
         if assets['ready']:
@@ -311,3 +364,63 @@ class PredictionModelHealthAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class RouteOptimizeAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [RoutingRateThrottle]
+    service = RouteIntelligenceService()
+
+    def post(self, request):
+        serializer = RouteOptimizationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        result = self.service.optimize(
+            start_coords=(params['start_latitude'], params['start_longitude']),
+            end_coords=(params['end_latitude'], params['end_longitude']),
+            departure_time=params.get('departure_time'),
+            eta_tolerance_ratio=params['eta_tolerance_ratio'],
+            alternatives_count=params['alternatives_count'],
+        )
+        if result.get('error'):
+            return Response(result, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response(result)
+
+
+class RouteAlternativesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [RoutingRateThrottle]
+    service = RouteIntelligenceService()
+
+    def post(self, request):
+        serializer = RouteOptimizationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        result = self.service.optimize(
+            start_coords=(params['start_latitude'], params['start_longitude']),
+            end_coords=(params['end_latitude'], params['end_longitude']),
+            departure_time=params.get('departure_time'),
+            eta_tolerance_ratio=params['eta_tolerance_ratio'],
+            alternatives_count=max(params['alternatives_count'], 2),
+        )
+        if result.get('error'):
+            return Response(result, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({'alternatives': result['alternatives']})
+
+
+class RouteRiskAnalysisAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [RoutingRateThrottle]
+    service = RouteIntelligenceService()
+
+    def post(self, request):
+        serializer = RouteRiskAnalysisSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        result = self.service.risk_analysis(
+            start_coords=(params['start_latitude'], params['start_longitude']),
+            end_coords=(params['end_latitude'], params['end_longitude']),
+        )
+        if result.get('error'):
+            return Response(result, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response(result)

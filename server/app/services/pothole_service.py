@@ -27,7 +27,7 @@ class PotholeService:
         self.warning_radius_meters = float(getattr(settings, 'POTHOLE_WARNING_RADIUS_METERS', 500.0))
 
     @transaction.atomic
-    def ingest_sensor_point(self, *, device_id, latitude, longitude, accelerometer_z, user_id=None):
+    def ingest_sensor_point(self, *, device_id, latitude, longitude, accelerometer_z, user_id=None, timestamp=None):
         user = None
         if user_id:
             user = User.objects.filter(id=user_id).first()

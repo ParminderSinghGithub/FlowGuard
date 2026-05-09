@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'app.apps.AppConfig',
     'rest_framework',
+    'rest_framework.authtoken',
     'django_celery_beat',
     'django_celery_results',
 ]
@@ -35,6 +36,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'app.middleware.RequestAuditMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -114,7 +116,8 @@ CELERY_WORKER_POOL                = 'solo'
 
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'flowguard-default',
     }
 }
 
@@ -122,6 +125,26 @@ CELERY_BEAT_SCHEDULE = {
     'fetch-ludhiana-traffic': {
         'task': 'app.tasks.fetch_ludhiana_traffic',
         'schedule': crontab(minute='*/2'),
+    },
+    'verify-pothole-clusters': {
+        'task': 'app.tasks.verify_pothole_clusters_task',
+        'schedule': crontab(minute='*/5'),
+    },
+    'cleanup-sensor-points': {
+        'task': 'app.tasks.cleanup_stale_sensor_points_task',
+        'schedule': crontab(hour='*/6', minute='0'),
+    },
+    'cleanup-notifications': {
+        'task': 'app.tasks.cleanup_stale_notifications_task',
+        'schedule': crontab(hour='3', minute='15'),
+    },
+    'cleanup-inactive-clusters': {
+        'task': 'app.tasks.cleanup_inactive_clusters_task',
+        'schedule': crontab(hour='4', minute='0'),
+    },
+    'refresh-route-cache': {
+        'task': 'app.tasks.refresh_route_cache_task',
+        'schedule': crontab(minute='*/15'),
     },
 }
 
@@ -132,6 +155,30 @@ POTHOLE_CLUSTER_RADIUS_METERS = float(os.getenv('POTHOLE_CLUSTER_RADIUS_METERS',
 POTHOLE_VERIFY_MIN_REPORTS = int(os.getenv('POTHOLE_VERIFY_MIN_REPORTS', '3'))
 POTHOLE_VERIFY_MIN_DEVICES = int(os.getenv('POTHOLE_VERIFY_MIN_DEVICES', '2'))
 POTHOLE_WARNING_RADIUS_METERS = float(os.getenv('POTHOLE_WARNING_RADIUS_METERS', '500.0'))
+SENSOR_INGEST_RATE_LIMIT = int(os.getenv('SENSOR_INGEST_RATE_LIMIT', '30'))
+SENSOR_INGEST_RATE_PERIOD_SECONDS = int(os.getenv('SENSOR_INGEST_RATE_PERIOD_SECONDS', '60'))
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.AllowAny',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'user': os.getenv('THROTTLE_USER_RATE', '120/min'),
+        'anon': os.getenv('THROTTLE_ANON_RATE', '60/min'),
+        'sensor_ingest_user': os.getenv('THROTTLE_SENSOR_USER_RATE', '30/min'),
+        'sensor_ingest_anon': os.getenv('THROTTLE_SENSOR_ANON_RATE', '10/min'),
+        'routing_api': os.getenv('THROTTLE_ROUTING_RATE', '50/min'),
+    },
+    'EXCEPTION_HANDLER': 'app.exceptions.standardized_exception_handler',
+}
 
 LOGGING = {
     'version': 1,
@@ -139,6 +186,18 @@ LOGGING = {
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'app.request': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'app.suspicious': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
         },
     },
     'root': {
