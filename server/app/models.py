@@ -78,12 +78,50 @@ class CongestionPrediction(models.Model):
     is_bottleneck_affected = models.BooleanField(default=False)  # Added default
 
 class PotholeReport(models.Model):
+    SOURCE_CHOICES = [
+        ('sensor', 'Sensor'),
+        ('manual', 'Manual'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    source_device_id = models.CharField(max_length=255, blank=True, default='')
     latitude = models.FloatField()
     longitude = models.FloatField()
     severity = models.CharField(max_length=20)  # E.g., 'minor', 'moderate', 'severe'
+    source_type = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
+    accelerometer_z = models.FloatField(null=True, blank=True)
+    confidence_score = models.FloatField(default=0.0)
     timestamp = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)  # Track if verified by repeated detection
+    cluster = models.ForeignKey('PotholeCluster', on_delete=models.SET_NULL, null=True, blank=True, related_name='reports')
+
+
+class PotholeCluster(models.Model):
+    centroid_latitude = models.FloatField()
+    centroid_longitude = models.FloatField()
+    radius_meters = models.FloatField(default=35.0)
+    reports_count = models.PositiveIntegerField(default=0)
+    confidence_aggregate = models.FloatField(default=0.0)
+    is_verified = models.BooleanField(default=False)
+    last_verified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class SensorDataPoint(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    device_id = models.CharField(max_length=255, db_index=True)
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    accelerometer_z = models.FloatField()
+    recorded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class UserLocation(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='last_location')
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    updated_at = models.DateTimeField(auto_now=True)
 
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)

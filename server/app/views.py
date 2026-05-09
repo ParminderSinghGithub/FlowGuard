@@ -1,34 +1,70 @@
-import json
 import os
+import logging
 import joblib
 import numpy as np
-import pandas as pd
-import tensorflow as tf
 from django.http import JsonResponse, HttpResponse
-from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from sklearn.preprocessing import MinMaxScaler
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 from .models import User, TrafficData, CongestionPrediction, PotholeReport, Notification, Route
 from .serializers import (
     UserSerializer, TrafficDataSerializer, CongestionPredictionSerializer,
-    PotholeReportSerializer, NotificationSerializer, RouteSerializer
+    PotholeReportSerializer, NotificationSerializer, RouteSerializer,
+    SensorIngestSerializer, NearbyPotholeQuerySerializer, RouteWarningQuerySerializer,
+    PotholeClusterSerializer,
 )
-from .traffic_apis.tomtom import get_ludhiana_traffic  # Ludhiana-specific API
+from .traffic_apis.tomtom import get_ludhiana_traffic
+from .services.pothole_service import PotholeService
 
-# Load TFLite model (Ludhiana-trained)
-TFLITE_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'tflite_model/models/traffic_lstm_model.tflite')
-interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+logger = logging.getLogger(__name__)
 
-# Load MinMaxScaler
-SCALER_PATH = os.path.join(os.path.dirname(__file__), 'tflite_model/scaler.pkl')
-scaler = joblib.load(SCALER_PATH)
+_MODEL_ASSETS = {
+    'ready': False,
+    'error': None,
+    'interpreter': None,
+    'input_details': None,
+    'output_details': None,
+    'scaler': None,
+}
+
+
+def _load_model_assets():
+    """Lazy model/scaler loader to prevent startup-time crashes."""
+    if _MODEL_ASSETS['ready']:
+        return _MODEL_ASSETS
+
+    if _MODEL_ASSETS['error']:
+        return _MODEL_ASSETS
+
+    try:
+        import tensorflow as tf
+
+        tflite_model_path = os.path.join(
+            os.path.dirname(__file__),
+            'tflite_model',
+            'models',
+            'traffic_lstm_model.tflite',
+        )
+        scaler_path = os.path.join(os.path.dirname(__file__), 'tflite_model', 'scaler.pkl')
+
+        interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
+        interpreter.allocate_tensors()
+
+        _MODEL_ASSETS.update({
+            'ready': True,
+            'interpreter': interpreter,
+            'input_details': interpreter.get_input_details(),
+            'output_details': interpreter.get_output_details(),
+            'scaler': joblib.load(scaler_path),
+        })
+    except Exception as exc:
+        _MODEL_ASSETS['error'] = str(exc)
+        logger.exception('Failed to initialize ML assets: %s', exc)
+
+    return _MODEL_ASSETS
 
 # Ludhiana-specific constants
 LUDHIANA_HOTSPOTS = [
@@ -40,41 +76,61 @@ LUDHIANA_HOTSPOTS = [
 
 @csrf_exempt
 def predict_traffic(request):
-    """Predict congestion for Ludhiana hotspots using TFLite model."""
+    """Predict congestion for Ludhiana hotspots."""
     if request.method == 'POST':
         try:
-            # Get real-time data from TomTom (Ludhiana)
             traffic_data = get_ludhiana_traffic()
             if not traffic_data:
                 return JsonResponse({"error": "Failed to fetch Ludhiana traffic data"}, status=500)
 
-            # Prepare input for TFLite model
-            input_array = []
+            speed_ratios = []
             for segment in traffic_data:
-                # Use normalized speed ratio as feature
-                speed_ratio = segment['speeds']['current'] / segment['speeds']['free_flow']
-                input_array.append([speed_ratio])
-            
-            input_array = np.array(input_array[-3:], dtype=np.float32)  # Last 3 timesteps
-            input_array = np.expand_dims(input_array, axis=0)  # Shape: (1, 3, 1)
+                speeds = segment.get('speeds', {})
+                free_flow = max(float(speeds.get('free_flow', 0.0)), 1.0)
+                current = float(speeds.get('current', 0.0))
+                if current < 0:
+                    continue
+                speed_ratios.append([current / free_flow])
 
-            # Predict
-            interpreter.set_tensor(input_details[0]['index'], input_array)
-            interpreter.invoke()
-            prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
-            denormalized_pred = scaler.inverse_transform([[prediction]])[0][0]
+            speed_ratios = speed_ratios[-3:]
+            if not speed_ratios:
+                return JsonResponse({"error": "No valid traffic segments available"}, status=500)
 
-            # Save prediction
-            latest_data = TrafficData.objects.latest('timestamp')
-            CongestionPrediction.objects.create(
-                location=latest_data,
-                predicted_congestion_level='severe' if denormalized_pred < 0.4 else 'moderate',
-                prediction_time=timezone.now(),
-                accuracy=0.95  # Placeholder
-            )
+            while len(speed_ratios) < 3:
+                speed_ratios.insert(0, speed_ratios[0])
+
+            assets = _load_model_assets()
+            if assets['ready']:
+                input_array = np.array(speed_ratios, dtype=np.float32)
+                input_array = np.expand_dims(input_array, axis=0)
+                assets['interpreter'].set_tensor(assets['input_details'][0]['index'], input_array)
+                assets['interpreter'].invoke()
+                prediction = assets['interpreter'].get_tensor(assets['output_details'][0]['index'])[0][0]
+                denormalized_pred = assets['scaler'].inverse_transform([[prediction]])[0][0]
+                model_status = 'ok'
+            else:
+                denormalized_pred = float(np.mean([v[0] for v in speed_ratios]))
+                model_status = f"fallback: {assets['error'] or 'unavailable'}"
+
+            values = [v[0] for v in speed_ratios]
+            base = max(float(np.mean(values)), 0.001)
+            variability = float(np.std(values)) / base
+            prediction_confidence = max(0.1, min(0.99, 1.0 - variability))
+
+            latest_data = TrafficData.objects.order_by('-timestamp').first()
+            if latest_data:
+                CongestionPrediction.objects.create(
+                    location=latest_data,
+                    predicted_congestion_level='severe' if denormalized_pred < 0.4 else 'moderate',
+                    prediction_time=timezone.now(),
+                    accuracy=0.95,
+                    prediction_confidence=prediction_confidence,
+                )
 
             return JsonResponse({
                 "prediction": float(denormalized_pred),
+                "prediction_confidence": prediction_confidence,
+                "model_status": model_status,
                 "hotspots": [{"lat": lat, "lon": lon} for lat, lon in LUDHIANA_HOTSPOTS]
             })
 
@@ -84,30 +140,18 @@ def predict_traffic(request):
     return JsonResponse({"error": "POST method required"}, status=405)
 
 def test_traffic_flow(request):
-    """Test endpoint for Ludhiana traffic (TomTom)."""
+    """Diagnostic endpoint for TomTom traffic fetch."""
     flow_data = get_ludhiana_traffic()
     return JsonResponse(flow_data, safe=False) if flow_data else \
            JsonResponse({"error": "API failure"}, status=500)
 
-# ViewSets (unchanged, but ensure they use Ludhiana data filters)
-class TrafficDataViewSet(viewsets.ModelViewSet):
-    queryset = TrafficData.objects.filter(location__icontains="Ludhiana")  # Ludhiana-only
-    serializer_class = TrafficDataSerializer
-
-class CongestionPredictionViewSet(viewsets.ModelViewSet):
-    queryset = CongestionPrediction.objects.filter(location__location__icontains="Ludhiana")
-    serializer_class = CongestionPredictionSerializer
-
-# Create your views here.
 def home(request):
     return HttpResponse("Welcome to FlowGuard App")
 
-# User ViewSet
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
-    # Example: retrieve user's routes
     @action(detail=True, methods=['get'])
     def routes(self, request, pk=None):
         user = self.get_object()
@@ -115,12 +159,10 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
 
-# TrafficData ViewSet
 class TrafficDataViewSet(viewsets.ModelViewSet):
     queryset = TrafficData.objects.all()
     serializer_class = TrafficDataSerializer
 
-    # Retrieve traffic data for a specific location
     @action(detail=False, methods=['get'])
     def location_data(self, request):
         latitude = request.query_params.get('latitude')
@@ -131,12 +173,10 @@ class TrafficDataViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({"error": "Location parameters missing."}, status=status.HTTP_400_BAD_REQUEST)
 
-# CongestionPrediction ViewSet
 class CongestionPredictionViewSet(viewsets.ModelViewSet):
     queryset = CongestionPrediction.objects.all()
     serializer_class = CongestionPredictionSerializer
 
-    # Get predictions for a specific location
     @action(detail=False, methods=['get'])
     def location_prediction(self, request):
         location_id = request.query_params.get('location_id')
@@ -146,31 +186,26 @@ class CongestionPredictionViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({"error": "Location ID missing."}, status=status.HTTP_400_BAD_REQUEST)
 
-# PotholeReport ViewSet
 class PotholeReportViewSet(viewsets.ModelViewSet):
     queryset = PotholeReport.objects.all()
     serializer_class = PotholeReportSerializer
 
-    # Add a new pothole report (POST)
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    # Get verified potholes only
     @action(detail=False, methods=['get'])
     def verified_potholes(self, request):
         verified_potholes = PotholeReport.objects.filter(is_verified=True)
         serializer = self.get_serializer(verified_potholes, many=True)
         return Response(serializer.data)
 
-# Notification ViewSet
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
 
-    # Mark notification as read
     @action(detail=True, methods=['post'])
     def mark_as_read(self, request, pk=None):
         notification = self.get_object()
@@ -178,15 +213,101 @@ class NotificationViewSet(viewsets.ModelViewSet):
         notification.save()
         return Response({"status": "Notification marked as read."})
 
-# Route ViewSet
 class RouteViewSet(viewsets.ModelViewSet):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
 
-    # Get traffic data for a specific route
     @action(detail=True, methods=['get'])
     def traffic_data(self, request, pk=None):
         route = self.get_object()
         traffic_data = route.traffic_data.all()
         serializer = TrafficDataSerializer(traffic_data, many=True)
         return Response(serializer.data)
+
+
+class SensorDataIngestAPIView(APIView):
+    service = PotholeService()
+
+    def post(self, request):
+        serializer = SensorIngestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = self.service.ingest_sensor_point(**serializer.validated_data)
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class ManualPotholeReportAPIView(APIView):
+    service = PotholeService()
+
+    def post(self, request):
+        serializer = PotholeReportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        report, cluster, verified = self.service.report_manual_pothole(
+            latitude=payload['latitude'],
+            longitude=payload['longitude'],
+            user_id=payload.get('user').id if payload.get('user') else None,
+            severity=payload.get('severity', 'moderate'),
+            confidence_score=payload.get('confidence_score', 0.5),
+        )
+        return Response(
+            {
+                'report': PotholeReportSerializer(report).data,
+                'cluster': PotholeClusterSerializer(cluster).data,
+                'cluster_verified': verified,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class NearbyPotholesAPIView(APIView):
+    service = PotholeService()
+
+    def get(self, request):
+        serializer = NearbyPotholeQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        clusters = self.service.nearby_potholes(
+            latitude=params['latitude'],
+            longitude=params['longitude'],
+            radius_meters=params['radius_meters'],
+            verified_only=params['verified_only'],
+        )
+        return Response(PotholeClusterSerializer(clusters, many=True).data)
+
+
+class VerifyPotholeClustersAPIView(APIView):
+    service = PotholeService()
+
+    def post(self, request):
+        verified_ids = self.service.verify_all_clusters()
+        return Response({'verified_cluster_ids': verified_ids})
+
+
+class RouteWarningsAPIView(APIView):
+    service = PotholeService()
+
+    def get(self, request):
+        serializer = RouteWarningQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        warnings = self.service.route_warnings(
+            latitude=params['latitude'],
+            longitude=params['longitude'],
+            radius_meters=params['radius_meters'],
+        )
+        return Response({'warnings': warnings, 'warning_count': len(warnings)})
+
+
+class PredictionModelHealthAPIView(APIView):
+    def get(self, request):
+        assets = _load_model_assets()
+        if assets['ready']:
+            return Response({'model_ready': True, 'status': 'ok'})
+        return Response(
+            {
+                'model_ready': False,
+                'status': 'degraded',
+                'error': assets['error'] or 'unknown',
+            },
+            status=status.HTTP_200_OK,
+        )

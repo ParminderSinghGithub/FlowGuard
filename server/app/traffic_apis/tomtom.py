@@ -1,13 +1,9 @@
 # app/traffic_apis/tomtom.py
 import requests
 import logging
-import time
 from django.conf import settings
 from django.utils import timezone
-from math import radians, sin, cos, sqrt, atan2
-import osmnx as ox
 from typing import List, Dict, Any
-import networkx as nx
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +25,9 @@ def get_road_connections(lat: float, lon: float, radius_km: float) -> List[str]:
     Returns list of connected road IDs within the radius.
     """
     try:
+        import osmnx as ox
+        import networkx as nx
+
         # Get the road network graph
         G = ox.graph_from_point((lat, lon), dist=radius_km*1000, network_type='drive')
         
