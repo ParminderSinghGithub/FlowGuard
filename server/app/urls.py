@@ -18,6 +18,7 @@ from .views import (
     RouteOptimizeAPIView,
     RouteAlternativesAPIView,
     RouteRiskAnalysisAPIView,
+    PredictTrafficAPIView,
 )
 
 router = DefaultRouter()
@@ -31,7 +32,7 @@ router.register(r'routes', RouteViewSet)
 urlpatterns = [
     path('', views.home, name='home'),
     path('auth/token/', obtain_auth_token, name='api_token_auth'),
-    path('predict/', views.predict_traffic, name='predict_traffic'),
+    path('predict/', PredictTrafficAPIView.as_view(), name='predict_traffic'),
     path('predict/health/', PredictionModelHealthAPIView.as_view(), name='predict_model_health'),
     path('test-traffic-flow/', views.test_traffic_flow, name='test_traffic_flow'),
     path('potholes/sensor/', SensorDataIngestAPIView.as_view(), name='pothole_sensor_ingest'),

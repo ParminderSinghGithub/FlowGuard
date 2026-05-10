@@ -11,8 +11,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env_path = BASE_DIR.parent / '.env'
 load_dotenv(env_path)
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'dev-only-change-me')
-DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
+# ===== SECURITY: Validate SECRET_KEY is not using dev default =====
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY or SECRET_KEY == 'dev-only-change-me':
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        'SECRET_KEY environment variable must be set and not use default value. '
+        'Generate a secure key for production: python -c "import secrets; print(secrets.token_urlsafe(50))"'
+    )
+
+# ===== SECURITY: DEBUG defaults to False (production-safe) =====
+DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
 
 
@@ -164,7 +173,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.UserRateThrottle',

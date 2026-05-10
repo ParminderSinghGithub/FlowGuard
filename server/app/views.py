@@ -6,7 +6,6 @@ from django.core.cache import cache
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -74,7 +73,7 @@ def _load_model_assets():
 
     return _MODEL_ASSETS
 
-# Ludhiana-specific constants
+# Ludhiana-specific constants (TODO: move to settings for geo-flexibility)
 LUDHIANA_HOTSPOTS = [
     (30.9000, 75.8573),  # City Center
     (30.9158, 75.8227),  # PAU/Sarabha Nagar
@@ -82,14 +81,20 @@ LUDHIANA_HOTSPOTS = [
     (30.8786, 75.8000)   # Dugri Rd
 ]
 
-@csrf_exempt
-def predict_traffic(request):
-    """Predict congestion for Ludhiana hotspots."""
-    if request.method == 'POST':
+
+class PredictTrafficAPIView(APIView):
+    """Predict congestion for Ludhiana hotspots. No auth required for public traffic info."""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """Predict traffic congestion based on historical patterns and ML model."""
         try:
             traffic_data = get_ludhiana_traffic()
             if not traffic_data:
-                return JsonResponse({"error": "Failed to fetch Ludhiana traffic data"}, status=500)
+                return Response(
+                    {'error': {'code': 'traffic_unavailable', 'message': 'Failed to fetch Ludhiana traffic data'}},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
             speed_ratios = []
             for segment in traffic_data:
@@ -102,7 +107,10 @@ def predict_traffic(request):
 
             speed_ratios = speed_ratios[-3:]
             if not speed_ratios:
-                return JsonResponse({"error": "No valid traffic segments available"}, status=500)
+                return Response(
+                    {'error': {'code': 'no_data', 'message': 'No valid traffic segments available'}},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
             while len(speed_ratios) < 3:
                 speed_ratios.insert(0, speed_ratios[0])
@@ -135,7 +143,7 @@ def predict_traffic(request):
                     prediction_confidence=prediction_confidence,
                 )
 
-            return JsonResponse({
+            return Response({
                 "prediction": float(denormalized_pred),
                 "prediction_confidence": prediction_confidence,
                 "model_status": model_status,
@@ -143,9 +151,18 @@ def predict_traffic(request):
             })
 
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception('Prediction failed: %s', e)
+            return Response(
+                {'error': {'code': 'prediction_error', 'message': str(e)}},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-    return JsonResponse({"error": "POST method required"}, status=405)
+
+# Legacy function-based view: redirect to class-based view or deprecate
+def predict_traffic(request):
+    """DEPRECATED: Use PredictTrafficAPIView instead. Function-based view kept for compatibility."""
+    view = PredictTrafficAPIView.as_view()
+    return view(request)
 
 def test_traffic_flow(request):
     """Diagnostic endpoint for TomTom traffic fetch."""
@@ -179,7 +196,10 @@ class TrafficDataViewSet(viewsets.ModelViewSet):
             traffic_data = TrafficData.objects.filter(latitude=latitude, longitude=longitude)
             serializer = self.get_serializer(traffic_data, many=True)
             return Response(serializer.data)
-        return Response({"error": "Location parameters missing."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'error': {'code': 'missing_params', 'message': 'Location parameters (latitude, longitude) are required.'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 class CongestionPredictionViewSet(viewsets.ModelViewSet):
     queryset = CongestionPrediction.objects.all()
@@ -192,7 +212,10 @@ class CongestionPredictionViewSet(viewsets.ModelViewSet):
             predictions = CongestionPrediction.objects.filter(location_id=location_id)
             serializer = self.get_serializer(predictions, many=True)
             return Response(serializer.data)
-        return Response({"error": "Location ID missing."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'error': {'code': 'missing_params', 'message': 'Location ID parameter is required.'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 class PotholeReportViewSet(viewsets.ModelViewSet):
     queryset = PotholeReport.objects.all()

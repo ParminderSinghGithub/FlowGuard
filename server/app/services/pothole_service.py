@@ -1,4 +1,5 @@
 from datetime import timedelta
+import numpy as np
 
 from django.conf import settings
 from django.db import transaction
@@ -114,10 +115,26 @@ class PotholeService:
         return report, cluster, verified
 
     def nearby_potholes(self, *, latitude, longitude, radius_meters=250.0, verified_only=True):
-        qs = PotholeCluster.objects.all()
+        """Find nearby pothole clusters using bounding box + Python distance calculation.
+        
+        Optimization: Uses approximate bounding box filter in database, then precise
+        distance calculation on reduced dataset to avoid O(N²) full-table scan.
+        """
+        # Rough bounding box filter: ~111km per degree
+        lat_delta = radius_meters / 111000.0
+        lon_delta = radius_meters / (111000.0 * abs(np.cos(np.radians(latitude))))
+        
+        qs = PotholeCluster.objects.filter(
+            centroid_latitude__gte=latitude - lat_delta,
+            centroid_latitude__lte=latitude + lat_delta,
+            centroid_longitude__gte=longitude - lon_delta,
+            centroid_longitude__lte=longitude + lon_delta,
+        )
+        
         if verified_only:
             qs = qs.filter(is_verified=True)
 
+        # Precise distance filtering on reduced dataset
         items = []
         for cluster in qs:
             distance_m = haversine_distance_meters(
@@ -177,10 +194,20 @@ class PotholeService:
         return values[mid]
 
     def _recent_duplicate_for_device(self, device_id, latitude, longitude):
+        """Check if device recently reported a pothole nearby (using bounding box optimization)."""
         since = timezone.now() - timedelta(seconds=self.device_cooldown_seconds)
+        
+        # Bounding box filter
+        lat_delta = self.cluster_radius_meters / 111000.0
+        lon_delta = self.cluster_radius_meters / (111000.0 * abs(np.cos(np.radians(latitude))))
+        
         recent_reports = PotholeReport.objects.filter(
             source_device_id=device_id,
             timestamp__gte=since,
+            latitude__gte=latitude - lat_delta,
+            latitude__lte=latitude + lat_delta,
+            longitude__gte=longitude - lon_delta,
+            longitude__lte=longitude + lon_delta,
         )
         for report in recent_reports:
             distance = haversine_distance_meters(latitude, longitude, report.latitude, report.longitude)
@@ -196,10 +223,26 @@ class PotholeService:
         return 'minor'
 
     def _attach_to_cluster(self, report):
+        """Attach report to nearest cluster using bounding box optimization.
+        
+        Optimization: Filter clusters in bounding box first, then compute
+        precise distance only on relevant clusters.
+        """
+        # Bounding box filter: ~111km per degree
+        lat_delta = self.cluster_radius_meters / 111000.0
+        lon_delta = self.cluster_radius_meters / (111000.0 * abs(np.cos(np.radians(report.latitude))))
+        
+        candidate_clusters = PotholeCluster.objects.filter(
+            centroid_latitude__gte=report.latitude - lat_delta,
+            centroid_latitude__lte=report.latitude + lat_delta,
+            centroid_longitude__gte=report.longitude - lon_delta,
+            centroid_longitude__lte=report.longitude + lon_delta,
+        )
+
         candidate_cluster = None
         min_distance = None
 
-        for cluster in PotholeCluster.objects.all():
+        for cluster in candidate_clusters:
             distance = haversine_distance_meters(
                 report.latitude,
                 report.longitude,
