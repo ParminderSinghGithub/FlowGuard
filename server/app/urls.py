@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken.views import obtain_auth_token
 from .views import (
     UserViewSet,
+    UserRegistrationAPIView,
     TrafficDataViewSet,
     CongestionPredictionViewSet,
     PotholeReportViewSet,
@@ -31,10 +32,10 @@ router.register(r'routes', RouteViewSet)
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('auth/register/', UserRegistrationAPIView.as_view(), name='api_user_register'),
     path('auth/token/', obtain_auth_token, name='api_token_auth'),
     path('predict/', PredictTrafficAPIView.as_view(), name='predict_traffic'),
     path('predict/health/', PredictionModelHealthAPIView.as_view(), name='predict_model_health'),
-    path('test-traffic-flow/', views.test_traffic_flow, name='test_traffic_flow'),
     path('potholes/sensor/', SensorDataIngestAPIView.as_view(), name='pothole_sensor_ingest'),
     path('potholes/report/', ManualPotholeReportAPIView.as_view(), name='pothole_report_manual'),
     path('potholes/nearby/', NearbyPotholesAPIView.as_view(), name='pothole_nearby'),

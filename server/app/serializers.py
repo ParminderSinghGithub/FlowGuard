@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
@@ -17,6 +18,44 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'device_id', 'is_active_user']
+
+
+class SignupSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    password_confirmation = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+        required=True,
+        allow_blank=False,
+    )
+
+    def validate_username(self, value):
+        normalized = value.strip()
+
+        if not normalized:
+            raise serializers.ValidationError('Username cannot be empty.')
+
+        if User.objects.filter(username__iexact=normalized).exists():
+            raise serializers.ValidationError(
+                'A user with this username already exists.'
+            )
+
+        return normalized
+
+    def validate(self, attrs):
+        password = attrs.get('password')
+        password_confirmation = attrs.get('password_confirmation')
+
+        if password != password_confirmation:
+            raise serializers.ValidationError({
+                'password_confirmation': 'Passwords do not match.'
+            })
+
+        user = User(username=attrs.get('username'))
+        validate_password(password, user=user)
+
+        return attrs
 
 class TrafficDataSerializer(serializers.ModelSerializer):
     class Meta:

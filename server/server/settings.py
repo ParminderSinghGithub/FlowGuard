@@ -20,9 +20,21 @@ if not SECRET_KEY or SECRET_KEY == 'dev-only-change-me':
         'Generate a secure key for production: python -c "import secrets; print(secrets.token_urlsafe(50))"'
     )
 
-# ===== SECURITY: DEBUG defaults to False (production-safe) =====
+# ===== Runtime mode =====
+# DEBUG controls error verbosity. FLOWGUARD_ENV controls deployment security defaults.
 DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
+FLOWGUARD_ENV = os.getenv('FLOWGUARD_ENV', 'development').strip().lower()
+IS_PRODUCTION = FLOWGUARD_ENV == 'production'
+
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
+
+SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
+SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
+CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000' if IS_PRODUCTION else '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
+SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'false').lower() == 'true'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if os.getenv('SECURE_PROXY_SSL_HEADER', 'false').lower() == 'true' else None
 
 
 # Application definition
@@ -43,6 +55,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'app.middleware.RequestAuditMiddleware',
@@ -74,10 +87,15 @@ WSGI_APPLICATION = 'server.wsgi.application'
 
 
 # SQLite-only by project requirement
+sqlite_db_path = os.getenv('SQLITE_DB_PATH')
+sqlite_db_name = Path(sqlite_db_path) if sqlite_db_path else BASE_DIR / 'db.sqlite3'
+if not sqlite_db_name.is_absolute():
+    sqlite_db_name = BASE_DIR.parent / sqlite_db_name
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': sqlite_db_name,
     }
 }
 
@@ -224,6 +242,11 @@ USE_I18N = True
 USE_TZ = True
 
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_AUTOREFRESH = DEBUG
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -4,16 +4,18 @@ import joblib
 import numpy as np
 from django.core.cache import cache
 from django.conf import settings
-from django.http import JsonResponse, HttpResponse
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.text import slugify
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.authtoken.models import Token
 from .models import User, TrafficData, CongestionPrediction, PotholeReport, Notification, Route
 from .serializers import (
-    UserSerializer, TrafficDataSerializer, CongestionPredictionSerializer,
+    UserSerializer, SignupSerializer, TrafficDataSerializer, CongestionPredictionSerializer,
     PotholeReportSerializer, NotificationSerializer, RouteSerializer,
     SensorIngestSerializer, NearbyPotholeQuerySerializer, RouteWarningQuerySerializer,
     PotholeClusterSerializer,
@@ -73,7 +75,6 @@ def _load_model_assets():
 
     return _MODEL_ASSETS
 
-# Ludhiana-specific constants (TODO: move to settings for geo-flexibility)
 LUDHIANA_HOTSPOTS = [
     (30.9000, 75.8573),  # City Center
     (30.9158, 75.8227),  # PAU/Sarabha Nagar
@@ -158,21 +159,56 @@ class PredictTrafficAPIView(APIView):
             )
 
 
-# Legacy function-based view: redirect to class-based view or deprecate
-def predict_traffic(request):
-    """DEPRECATED: Use PredictTrafficAPIView instead. Function-based view kept for compatibility."""
-    view = PredictTrafficAPIView.as_view()
-    return view(request)
-
-def test_traffic_flow(request):
-    """Diagnostic endpoint for TomTom traffic fetch."""
-    flow_data = get_ludhiana_traffic()
-    return JsonResponse(flow_data, safe=False) if flow_data else \
-           JsonResponse({"error": "API failure"}, status=500)
-
 def home(request):
     return HttpResponse("Welcome to FlowGuard App")
 
+
+
+class UserRegistrationAPIView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = SignupSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {"errors": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        username = serializer.validated_data['username']
+        password = serializer.validated_data['password']
+
+        device_id = self._device_id_for(username)
+
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            device_id=device_id,
+        )
+
+        token, _ = Token.objects.get_or_create(user=user)
+
+        return Response(
+            {
+                'token': token.key,
+                'user': UserSerializer(user).data,
+                'message': 'Account created successfully.',
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def _device_id_for(self, username):
+        base = slugify(username) or 'user'
+        candidate = f"web-{base}"
+        suffix = 1
+
+        while User.objects.filter(device_id=candidate).exists():
+            suffix += 1
+            candidate = f"web-{base}-{suffix}"
+
+        return candidate
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer

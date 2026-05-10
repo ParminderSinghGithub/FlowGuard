@@ -1,14 +1,11 @@
 from django.db import models
-from django.utils.crypto import get_random_string  
 from django.contrib.auth.models import AbstractUser
 import uuid
 
-# Create your models here.
-
 class User(AbstractUser):
-    device_id = models.CharField(max_length=255, unique=True)  # Track device anonymously
-    is_active_user = models.BooleanField(default=True)  # Track if currently active in-app
-    preferred_routes = models.ManyToManyField('Route', blank=True)  # User-saved routes
+    device_id = models.CharField(max_length=255, unique=True)
+    is_active_user = models.BooleanField(default=True)
+    preferred_routes = models.ManyToManyField('Route', blank=True)
 
 # models.py
 class TrafficData(models.Model):

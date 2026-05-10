@@ -76,6 +76,45 @@ class SecurityAndPotholeApiTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('token', response.data)
 
+	def test_signup_requires_matching_password_confirmation(self):
+		response = self.client.post(
+			'/api/auth/register/',
+			{
+				'username': 'new-user',
+				'password': 'StrongPass123!',
+				'password_confirmation': 'different',
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertIn('password_confirmation', response.data['errors'])
+
+	def test_signup_rejects_duplicate_username(self):
+		response = self.client.post(
+			'/api/auth/register/',
+			{
+				'username': 'U1',
+				'password': 'StrongPass123!',
+				'password_confirmation': 'StrongPass123!',
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertIn('username', response.data['errors'])
+
+	def test_signup_issues_token(self):
+		response = self.client.post(
+			'/api/auth/register/',
+			{
+				'username': 'fresh-user',
+				'password': 'StrongPass123!',
+				'password_confirmation': 'StrongPass123!',
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, 201)
+		self.assertIn('token', response.data)
+
 	def test_sensor_endpoint_rejects_invalid_coordinates(self):
 		self._auth(self.user1)
 		response = self.client.post(
@@ -86,6 +125,8 @@ class SecurityAndPotholeApiTests(TestCase):
 		self.assertEqual(response.status_code, 400)
 
 	@override_settings(
+		SENSOR_INGEST_RATE_LIMIT=2,
+		SENSOR_INGEST_RATE_PERIOD_SECONDS=60,
 		REST_FRAMEWORK={
 			'DEFAULT_AUTHENTICATION_CLASSES': (
 				'rest_framework.authentication.TokenAuthentication',
@@ -106,7 +147,7 @@ class SecurityAndPotholeApiTests(TestCase):
 			'EXCEPTION_HANDLER': 'app.exceptions.standardized_exception_handler',
 		}
 	)
-	def test_sensor_rate_limiting(self):
+	def test_drf_sensor_rate_limiting(self):
 		cache.clear()
 		self._auth(self.user1)
 		payload = {'device_id': 'd1', 'latitude': 30.9, 'longitude': 75.85, 'accelerometer_z': 0.2}

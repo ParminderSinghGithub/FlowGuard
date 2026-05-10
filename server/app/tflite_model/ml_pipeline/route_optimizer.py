@@ -5,7 +5,10 @@ from collections import defaultdict
 import os
 from datetime import timedelta, datetime
 import math
+import logging
 from .feature_engineering import StreamFeatureGenerator
+
+logger = logging.getLogger(__name__)
 
 class RouteOptimizer:
     def __init__(self, tflite_model=None):
@@ -112,16 +115,13 @@ class RouteOptimizer:
 
     def predict_segment(self, segment_id, features):
         features = np.array(features, dtype=np.float32).reshape(1, -1, 1)
-        print("features shape:", features.shape)
-        print("features:", features)
         
         model_inputs = self.feature_generator.get_model_input_features(segment_id)
 
         if model_inputs is None:
-            print(f"[Warning] Insufficient features for segment {segment_id}. Falling back to historical speed.")
-            # Fallback to historical speed prediction
+            logger.debug("Insufficient features for segment %s; using historical speed.", segment_id)
             historical_speed = self.route_graph[segment_id]['historical_speed']
-            return historical_speed  # directly return speed, not model output
+            return historical_speed
 
         temporal_features = model_inputs['temporal']  # shape (1,10,5)
         spatial_features = model_inputs['spatial']    # shape (1,3)
