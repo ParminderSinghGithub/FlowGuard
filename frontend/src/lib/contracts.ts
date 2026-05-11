@@ -42,6 +42,36 @@ export type RouteSummary = {
   pothole_warning_count: number;
   affected_coordinates: RouteAffectedCoordinate[];
   composite_score: number;
+  smart_guidance?: {
+    recommended_speed_range: {
+      min_speed_kmh: number;
+      max_speed_kmh: number;
+      recommended_speed_kmh: number;
+    };
+    congestion_level: {
+      level: 'low' | 'moderate' | 'high' | 'severe';
+      description: string;
+      congestion_index: number;
+    };
+    road_quality_warning: {
+      quality_level: 'good' | 'fair' | 'poor' | 'hazardous';
+      description: string;
+      risk_score: number;
+      pothole_warnings: number;
+      high_risk_segments_count: number;
+      has_immediate_hazards: boolean;
+    };
+    driving_recommendations: string[];
+    confidence_score: number;
+    eta_pressure: {
+      level: 'low' | 'moderate' | 'high';
+      description: string;
+      pressure_ratio: number;
+      base_eta_minutes: number;
+      penalty_minutes: number;
+    };
+    fallback_mode?: boolean;
+  };
 };
 
 export type RouteOptimizationRequest = {
@@ -80,6 +110,7 @@ export type PredictionHealthResponse = {
   model_ready: boolean;
   status: string;
   error?: string;
+  message?: string;
 };
 
 export type TrafficPredictionResponse = {

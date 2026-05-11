@@ -43,8 +43,8 @@ export function SignupPage() {
     <main className="auth-screen">
       <section className="hero-card auth-card">
         <p className="eyebrow">{APP_NAME}</p>
-        <h1>Create your FlowGuard account.</h1>
-        <p className="muted">Start planning routes with live pothole awareness and saved location history.</p>
+        <h1>Begin your intelligent journey.</h1>
+        <p className="muted">Experience smart route optimization with traffic prediction and road intelligence for safer urban navigation.</p>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>

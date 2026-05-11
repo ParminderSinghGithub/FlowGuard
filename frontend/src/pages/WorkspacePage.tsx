@@ -28,6 +28,7 @@ import {
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { LoadingPanel } from '@/components/LoadingPanel';
 import { LocationPicker } from '@/components/LocationPicker';
+import { SmartGuidance } from '@/components/SmartGuidance';
 import { MapCanvas } from '@/map/MapCanvas';
 
 const defaultDestination = getDemoDestination();
@@ -228,8 +229,9 @@ export function WorkspacePage() {
 
   const routeSummary = routeOptions[selectedRouteIndex] ?? routeOptions[0] ?? null;
 
-  const startSuggestions = useMemo(() => searchLocations(startQuery), [startQuery]);
-  const destinationSuggestions = useMemo(() => searchLocations(destinationQuery), [destinationQuery]);
+  const allSuggestions = useMemo(() => searchLocations(''), []); // Get all locations with empty query
+  const startSuggestions = allSuggestions;
+  const destinationSuggestions = allSuggestions;
   const recentStartSelections = useMemo(
     () => recentLocations.filter((locationPoint) => locationPoint.id !== destinationSelection?.id).slice(0, 4),
     [destinationSelection?.id, recentLocations],
@@ -373,7 +375,7 @@ export function WorkspacePage() {
       <header className="topbar">
         <div>
           <p className="eyebrow">{APP_NAME}</p>
-          <h1>Pothole-aware route planner</h1>
+          <h1>Intelligent Route Planner</h1>
         </div>
         <button className="button button-secondary" type="button" onClick={handleSignOut}>
           Sign out
@@ -381,10 +383,6 @@ export function WorkspacePage() {
       </header>
 
       <section className="status-strip">
-        <div className="status-card">
-          <span className="status-label">Prediction</span>
-          <strong>{health?.status ?? 'checking'}</strong>
-        </div>
         <div className="status-card">
           <span className="status-label">Traffic</span>
           <strong>{traffic ? `${Math.round(traffic.prediction * 100)}% congestion` : 'loading'}</strong>
@@ -429,31 +427,27 @@ export function WorkspacePage() {
 
             <LocationPicker
               label="Start location"
-              placeholder="Search for current location, a hotspot, or an intersection"
-              query={startQuery}
+              placeholder="Select start location"
               value={routeStartSelection}
               suggestions={startSuggestions}
               recentSelections={recentStartSelections}
               helperText="Use a saved place or current location."
-              onQueryChange={setStartQuery}
               onPick={handlePickStart}
               onUseCurrentLocation={handleUseCurrentLocation}
             />
 
             <LocationPicker
               label="Destination"
-              placeholder="Search a place by name"
-              query={destinationQuery}
+              placeholder="Select destination"
               value={routeDestinationSelection}
               suggestions={destinationSuggestions}
               recentSelections={recentDestinationSelections}
               helperText="Pick a destination from the location catalog."
-              onQueryChange={setDestinationQuery}
               onPick={handlePickDestination}
             />
 
             <button className="button button-primary" type="submit" disabled={routeLoading || !routeStartSelection || !routeDestinationSelection}>
-              {routeLoading ? 'Optimizing...' : 'Optimize route'}
+              {routeLoading ? 'Optimizing route...' : 'Optimize route'}
             </button>
           </form>
 
@@ -492,9 +486,14 @@ export function WorkspacePage() {
                 </ul>
               </>
             ) : (
-              <p className="muted">Pick a destination and optimize the safest route first.</p>
+              <p className="muted">Select locations to begin intelligent route planning.</p>
             )}
           </section>
+
+          <SmartGuidance 
+            guidance={routeSummary?.smart_guidance || null} 
+            isLoading={routeLoading} 
+          />
 
           <section className="summary-card">
             <h2>Alternative routes</h2>
@@ -514,7 +513,7 @@ export function WorkspacePage() {
                   </li>
                 ))
               ) : (
-                <li className="muted">No alternatives loaded yet.</li>
+                <li className="muted">No alternative routes available. Try different locations.</li>
               )}
             </ul>
           </section>
@@ -529,7 +528,7 @@ export function WorkspacePage() {
                   </li>
                 ))
               ) : (
-                <li className="muted">No potholes loaded yet.</li>
+                <li className="muted">No road hazards detected in this area. Safe travels!</li>
               )}
             </ul>
           </section>

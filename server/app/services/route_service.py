@@ -3,6 +3,7 @@ import logging
 
 from app.models import PotholeCluster
 from app.services.geo import haversine_distance_meters
+from app.services.guidance_service import SmartGuidanceService
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class RouteIntelligenceService:
         self.base_penalty_seconds = 140.0
         self._optimizer = None
         self._optimizer_error = None
+        self._guidance_service = SmartGuidanceService()
 
     def _get_optimizer(self):
         if self._optimizer:
@@ -37,50 +39,99 @@ class RouteIntelligenceService:
         if departure_time is None:
             departure_time = datetime.now()
 
+        # Try to get ML optimizer, but have multiple fallback levels
         try:
             optimizer = self._get_optimizer()
             graph = optimizer.route_graph
+            optimizer_available = True
         except Exception as exc:
-            return {
-                'error': 'Route engine unavailable.',
-                'fallback_mode': True,
-                'details': str(exc),
+            logger.warning('Route optimizer unavailable, using fallback: %s', exc)
+            optimizer_available = False
+            graph = None
+
+        # If ML optimizer is available, try intelligent routing
+        if optimizer_available:
+            try:
+                start_segment = optimizer._nearest_segment(start_coords)
+                end_segment = optimizer._nearest_segment(end_coords)
+                if not start_segment or not end_segment:
+                    return self._fallback_route_optimization(start_coords, end_coords, 'Could not map coordinates to route graph segments.')
+
+                candidate_paths = self._enumerate_paths(graph, start_segment, end_segment, max_depth=8)
+                if not candidate_paths:
+                    return self._fallback_route_optimization(start_coords, end_coords, 'No valid route found in graph.')
+
+                scored = []
+                for path in candidate_paths:
+                    score = self._score_path(graph, path)
+                    scored.append(score)
+
+                scored.sort(key=lambda x: x['composite_score'])
+                best_by_score = scored[0]
+                best_by_eta = min(scored, key=lambda x: x['eta_seconds'])
+
+                # Prefer smoother route when ETA difference remains reasonable.
+                selected = best_by_score
+                if best_by_score['eta_seconds'] > best_by_eta['eta_seconds'] * eta_tolerance_ratio:
+                    selected = best_by_eta
+
+                alternatives = [item for item in scored if item['path'] != selected['path']][:alternatives_count]
+
+                return {
+                    'selected_route': self._format_route_result(selected),
+                    'alternatives': [self._format_route_result(item) for item in alternatives],
+                    'graph_mode': 'local_graph',
+                    'fallback_mode': False,
+                }
+            except Exception as exc:
+                logger.warning('ML routing failed, falling back to static routing: %s', exc)
+                # Fall back to static routing if ML routing fails
+                return self._fallback_route_optimization(start_coords, end_coords, f'ML routing error: {exc}')
+        
+        # If no optimizer available, use static fallback routing
+        return self._fallback_route_optimization(start_coords, end_coords, 'Route engine unavailable')
+
+    def _fallback_route_optimization(self, start_coords, end_coords, error_message):
+        """Fallback route optimization when ML components are unavailable."""
+        try:
+            # Calculate direct distance-based route
+            distance = haversine_distance_meters(
+                start_coords[0], start_coords[1],
+                end_coords[0], end_coords[1]
+            )
+            
+            # Base ETA on reasonable urban speed (25 km/h = ~7 m/s)
+            base_eta_seconds = distance / 7.0
+            
+            # Add some penalty for unknown conditions
+            penalty_seconds = min(300, base_eta_seconds * 0.2)  # Max 5 min penalty
+            
+            # Create a simple route representation
+            route_data = {
+                'segments': ['fallback_route'],
+                'eta_seconds': round(base_eta_seconds + penalty_seconds, 2),
+                'pothole_penalty_seconds': round(penalty_seconds, 2),
+                'route_risk_score': min(40.0, distance / 100),  # Simple risk based on distance
+                'pothole_warning_count': 0,
+                'affected_coordinates': [],
+                'composite_score': round(base_eta_seconds + penalty_seconds, 2),
             }
-
-        start_segment = optimizer._nearest_segment(start_coords)
-        end_segment = optimizer._nearest_segment(end_coords)
-        if not start_segment or not end_segment:
+            
             return {
-                'error': 'Could not map coordinates to route graph segments.',
+                'selected_route': route_data,
+                'alternatives': [],
+                'graph_mode': 'fallback_direct',
                 'fallback_mode': True,
+                'error': error_message,
+                'details': f'Using direct distance-based routing ({distance:.0f}m)',
             }
-
-        candidate_paths = self._enumerate_paths(graph, start_segment, end_segment, max_depth=8)
-        if not candidate_paths:
-            return {'error': 'No valid route found in graph.', 'fallback_mode': True}
-
-        scored = []
-        for path in candidate_paths:
-            score = self._score_path(graph, path)
-            scored.append(score)
-
-        scored.sort(key=lambda x: x['composite_score'])
-        best_by_score = scored[0]
-        best_by_eta = min(scored, key=lambda x: x['eta_seconds'])
-
-        # Prefer smoother route when ETA difference remains reasonable.
-        selected = best_by_score
-        if best_by_score['eta_seconds'] > best_by_eta['eta_seconds'] * eta_tolerance_ratio:
-            selected = best_by_eta
-
-        alternatives = [item for item in scored if item['path'] != selected['path']][:alternatives_count]
-
-        return {
-            'selected_route': self._format_route_result(selected),
-            'alternatives': [self._format_route_result(item) for item in alternatives],
-            'graph_mode': 'local_graph',
-            'fallback_mode': False,
-        }
+        except Exception as exc:
+            logger.error('Fallback routing failed: %s', exc)
+            return {
+                'error': 'Route optimization completely failed.',
+                'fallback_mode': True,
+                'details': f'Fallback error: {exc}',
+            }
 
     def risk_analysis(self, *, start_coords, end_coords):
         result = self.optimize(start_coords=start_coords, end_coords=end_coords, alternatives_count=1)
@@ -204,7 +255,7 @@ class RouteIntelligenceService:
         return sum(numeric) / len(numeric)
 
     def _format_route_result(self, score_dict):
-        return {
+        route_data = {
             'segments': score_dict['path'],
             'eta_seconds': score_dict['eta_seconds'],
             'pothole_penalty_seconds': score_dict['pothole_penalty_seconds'],
@@ -213,3 +264,13 @@ class RouteIntelligenceService:
             'affected_coordinates': score_dict['affected_coordinates'],
             'composite_score': score_dict['composite_score'],
         }
+        
+        # Generate smart guidance for the route
+        try:
+            smart_guidance = self._guidance_service.generate_guidance(route_data=route_data)
+            route_data['smart_guidance'] = smart_guidance
+        except Exception as exc:
+            logger.warning('Smart guidance generation failed: %s', exc)
+            route_data['smart_guidance'] = None
+            
+        return route_data

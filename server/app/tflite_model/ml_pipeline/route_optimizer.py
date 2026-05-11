@@ -1,5 +1,53 @@
 import numpy as np
-import tensorflow as tf
+import os
+import logging
+
+# Try to import TensorFlow with fallback handling
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+except ImportError as e:
+    logging.error(f"TensorFlow import failed: {e}")
+    TF_AVAILABLE = False
+    # Create a minimal mock tf object for basic functionality
+    class MockTensorFlow:
+        class lite:
+            class Interpreter:
+                def __init__(self, model_path=None):
+                    self.model_path = model_path
+                def allocate_tensors(self):
+                    pass
+                def get_input_details(self):
+                    return [{'index': 0, 'shape': [1, 10, 5], 'dtype': 'float32'}]
+                def get_output_details(self):
+                    return [{'index': 0, 'shape': [1], 'dtype': 'float32'}]
+                def set_tensor(self, index, data):
+                    pass
+                def invoke(self):
+                    pass
+    tf = MockTensorFlow()
+except Exception as e:
+    logging.error(f"TensorFlow initialization failed: {e}")
+    TF_AVAILABLE = False
+    tf = None
+
+# Try to import LiteRT interpreter for Flex delegate support
+try:
+    from ai_edge_litert.interpreter import Interpreter
+    TFLiteInterpreter = Interpreter
+    TFLITE_AVAILABLE = True
+    logging.info("LiteRT interpreter imported successfully")
+except ImportError as e:
+    # Fallback to TensorFlow TFLite if LiteRT not available
+    try:
+        import tensorflow as tf
+        TFLiteInterpreter = tf.lite.Interpreter
+        TFLITE_AVAILABLE = True
+        logging.info("TensorFlow TFLite imported successfully")
+    except ImportError as e2:
+        logging.error(f"Both LiteRT and TensorFlow TFLite import failed: {e2}")
+        TFLITE_AVAILABLE = False
+        TFLiteInterpreter = None
 from queue import PriorityQueue
 from collections import defaultdict
 import os
@@ -26,11 +74,41 @@ class RouteOptimizer:
         """Load TFLite model and allocate tensors"""
         if not os.path.exists(tflite_path):
             raise FileNotFoundError(f"Model file not found: {tflite_path}")
-
-        self.interpreter = tf.lite.Interpreter(model_path=tflite_path)
-        self.interpreter.allocate_tensors()
-        self.input_details = self.interpreter.get_input_details()
-        self.output_details = self.interpreter.get_output_details()
+        
+        if not TFLITE_AVAILABLE:
+            logger.warning("TFLite not available, skipping model loading")
+            self.interpreter = None
+            self.input_details = None
+            self.output_details = None
+            return
+        
+        try:
+            # Try with Flex delegate for models with TensorFlow ops
+            try:
+                from ai_edge_litert.interpreter import Interpreter
+                from ai_edge_litert.delegate import FlexDelegate
+                
+                flex_delegate = FlexDelegate()
+                self.interpreter = Interpreter(
+                    model_path=tflite_path,
+                    experimental_delegates=[flex_delegate]
+                )
+            except ImportError:
+                # Fallback to basic interpreter
+                self.interpreter = TFLiteInterpreter(model_path=tflite_path)
+            
+            self.interpreter.allocate_tensors()
+            self.input_details = self.interpreter.get_input_details()
+            self.output_details = self.interpreter.get_output_details()
+            logger.info("TFLite model loaded successfully with Flex delegate")
+        except Exception as exc:
+            logger.error(f"TFLite model loading failed: {exc}")
+            # Set model to None to indicate failure but allow fallback routing
+            self.interpreter = None
+            self.input_details = None
+            self.output_details = None
+            # Re-raise to trigger fallback behavior in calling code
+            raise
 
     def _build_route_graph(self):
         """Build road network graph structure (undirected)"""
@@ -114,22 +192,26 @@ class RouteOptimizer:
         ], dtype=np.float32).reshape(1, -1)
 
     def predict_segment(self, segment_id, features):
+        if not TFLITE_AVAILABLE or not self.interpreter:
+            logger.debug("TFLite not available, using historical speed for segment %s", segment_id)
+            historical_speed = self.route_graph[segment_id]['historical_speed']
+            return historical_speed
+        
         features = np.array(features, dtype=np.float32).reshape(1, -1, 1)
         
         model_inputs = self.feature_generator.get_model_input_features(segment_id)
-
         if model_inputs is None:
             logger.debug("Insufficient features for segment %s; using historical speed.", segment_id)
             historical_speed = self.route_graph[segment_id]['historical_speed']
             return historical_speed
-
+        
         temporal_features = model_inputs['temporal']  # shape (1,10,5)
         spatial_features = model_inputs['spatial']    # shape (1,3)
-
+        
         # Expand dims to batch size = 1
         temporal_features = np.expand_dims(temporal_features, axis=0)
         spatial_features = np.expand_dims(spatial_features, axis=0)
-
+        
         self.interpreter.set_tensor(self.input_details[0]['index'], temporal_features)
         self.interpreter.set_tensor(self.input_details[1]['index'], spatial_features)
         

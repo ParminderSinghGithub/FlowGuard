@@ -5,6 +5,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from .views import (
     UserViewSet,
     UserRegistrationAPIView,
+    CustomAuthTokenView,
     TrafficDataViewSet,
     CongestionPredictionViewSet,
     PotholeReportViewSet,
@@ -33,7 +34,7 @@ router.register(r'routes', RouteViewSet)
 urlpatterns = [
     path('', views.home, name='home'),
     path('auth/register/', UserRegistrationAPIView.as_view(), name='api_user_register'),
-    path('auth/token/', obtain_auth_token, name='api_token_auth'),
+    path('auth/token/', CustomAuthTokenView.as_view(), name='api_token_auth'),
     path('predict/', PredictTrafficAPIView.as_view(), name='predict_traffic'),
     path('predict/health/', PredictionModelHealthAPIView.as_view(), name='predict_model_health'),
     path('potholes/sensor/', SensorDataIngestAPIView.as_view(), name='pothole_sensor_ingest'),

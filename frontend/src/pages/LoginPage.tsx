@@ -37,8 +37,8 @@ export function LoginPage() {
     <main className="auth-screen">
       <section className="hero-card">
         <p className="eyebrow">{APP_NAME}</p>
-        <h1>Sign in to safer route planning.</h1>
-        <p className="muted">View nearby potholes, compare route risk, and choose a better path through Ludhiana.</p>
+        <h1>Welcome back to intelligent navigation.</h1>
+        <p className="muted">Access your smart route optimization, traffic predictions, and personalized driving guidance.</p>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>

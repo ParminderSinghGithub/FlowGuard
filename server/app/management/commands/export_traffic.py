@@ -13,9 +13,8 @@ class Command(BaseCommand):
         output_path = os.path.join(project_root, 'tflite_model', 'traffic_data.csv')
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        # Debug: Print some model info
         total_records = TrafficData.objects.count()
-        self.stdout.write(f"Total records in DB: {total_records}")
+        self.stdout.write(f"Exported {total_records} traffic records")
 
         # Get data with proper time filtering
         qs = TrafficData.objects.filter(
