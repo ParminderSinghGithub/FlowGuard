@@ -1,0 +1,76 @@
+services:
+  - type: web
+    name: flowguard-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server/manage.py runserver 0.0.0.0:10000
+    healthCheckPath: /api/predict/health/
+    envVars:
+      # Django Core Settings
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: DJANGO_SETTINGS_MODULE
+        value: server.settings
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLOWGUARD_ENV
+        value: production
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_HOSTS
+        value: flowguard-api.onrender.com,localhost,127.0.0.1
+      - key: SECURE_SSL_REDIRECT
+        value: true
+      - key: SESSION_COOKIE_SECURE
+        value: true
+      - key: CSRF_COOKIE_SECURE
+        value: true
+      - key: SECURE_HSTS_SECONDS
+        value: 31536000
+      - key: SECURE_HSTS_INCLUDE_SUBDOMAINS
+        value: true
+      - key: SECURE_HSTS_PRELOAD
+        value: true
+      - key: SECURE_PROXY_SSL_HEADER
+        value: true
+      
+      # Database
+      - key: SQLITE_DB_PATH
+        value: server/db.sqlite3
+      
+      # External APIs
+      - key: TOMTOM_API_KEY
+        sync: false
+      
+      # API Throttling
+      - key: THROTTLE_USER_RATE
+        value: 120/min
+      - key: THROTTLE_ANON_RATE
+        value: 60/min
+      - key: THROTTLE_SENSOR_USER_RATE
+        value: 30/min
+      - key: THROTTLE_SENSOR_ANON_RATE
+        value: 10/min
+      - key: THROTTLE_ROUTING_RATE
+        value: 50/min
+      
+      # Pothole Detection Settings
+      - key: POTHOLE_Z_THRESHOLD
+        value: 3.2
+      - key: POTHOLE_DEBOUNCE_SECONDS
+        value: 10
+      - key: POTHOLE_DEVICE_COOLDOWN_SECONDS
+        value: 60
+      - key: POTHOLE_CLUSTER_RADIUS_METERS
+        value: 35.0
+      - key: POTHOLE_VERIFY_MIN_REPORTS
+        value: 3
+      - key: POTHOLE_VERIFY_MIN_DEVICES
+        value: 2
+      - key: POTHOLE_WARNING_RADIUS_METERS
+        value: 500.0
+      - key: SENSOR_INGEST_RATE_LIMIT
+        value: 30
+      - key: SENSOR_INGEST_RATE_PERIOD_SECONDS
+        value: 60
