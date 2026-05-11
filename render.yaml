@@ -3,8 +3,8 @@ services:
     name: flowguard-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python server/manage.py runserver 0.0.0.0:10000
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
+    startCommand: gunicorn server.wsgi:application --bind 0.0.0.0:$PORT --workers 3
     healthCheckPath: /api/predict/health/
     envVars:
       # Django Core Settings
