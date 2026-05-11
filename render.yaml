@@ -3,6 +3,8 @@ services:
     name: flowguard-api
     env: python
     plan: free
+    repo: https://github.com/ParminderSinghGithub/FlowGuard.git
+    rootDir: server
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
     startCommand: gunicorn server.wsgi:application --bind 0.0.0.0:$PORT --workers 3
     healthCheckPath: /api/predict/health/
