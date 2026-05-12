@@ -8,8 +8,8 @@ services:
     healthCheckPath: /api/predict/health/
     envVars:
       # Django Core Settings
-      - key: DJANGO_SETTINGS_MODULE
-        value: server.server.settings
+      # - key: DJANGO_SETTINGS_MODULE
+      #   value: server.server.settings
       - key: SECRET_KEY
         generateValue: true
       - key: FLOWGUARD_ENV
