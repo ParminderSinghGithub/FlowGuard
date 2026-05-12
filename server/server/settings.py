@@ -1,14 +1,14 @@
 """Django settings for FlowGuard server."""
 
-# STARTUP DIAGNOSTICS - Identify active settings file
-print("ACTIVE SETTINGS FILE:", __file__)
-print("DEBUG DJANGO_SETTINGS_MODULE =", os.environ.get("DJANGO_SETTINGS_MODULE"))
-
 from pathlib import Path
 from kombu import Queue
 from celery.schedules import crontab
 import os
 from dotenv import load_dotenv
+
+# STARTUP DIAGNOSTICS - Identify active settings file
+print("ACTIVE SETTINGS FILE:", __file__)
+print("DEBUG DJANGO_SETTINGS_MODULE =", os.environ.get("DJANGO_SETTINGS_MODULE"))
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
