@@ -257,10 +257,15 @@ class CustomAuthTokenView(APIView):
         """Obtain auth token for valid credentials."""
         from rest_framework.authtoken.serializers import AuthTokenSerializer
         
+        # Temporary debugging
+        logger.info(f"Auth request data: {request.data}")
+        logger.info(f"Auth request headers: {dict(request.headers)}")
+        
         serializer = AuthTokenSerializer(data=request.data)
         if not serializer.is_valid():
+            logger.error(f"Auth serializer errors: {serializer.errors}")
             return Response(
-                {"error": {"code": "invalid_credentials", "message": "Invalid username or password."}},
+                {"error": {"code": "invalid_credentials", "message": "Invalid username or password.", "details": serializer.errors}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
