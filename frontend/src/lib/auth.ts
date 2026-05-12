@@ -19,7 +19,7 @@ export function clearToken(): void {
 }
 
 export async function login(username: string, password: string): Promise<string> {
-  const response = await fetch(apiUrl('/auth/token/'), {
+  const response = await fetch(apiUrl('/api/auth/token/'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -41,7 +41,7 @@ export async function login(username: string, password: string): Promise<string>
 }
 
 export async function signup(username: string, password: string, passwordConfirmation: string): Promise<string> {
-  const response = await fetch(apiUrl('/auth/register/'), {
+  const response = await fetch(apiUrl('/api/auth/register/'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
