@@ -2,76 +2,70 @@
 
 FlowGuard is an intelligent mobility platform that combines ML-enhanced route optimization, traffic prediction, and smart driving guidance to help drivers navigate urban road hazards safely and efficiently.
 
-## Live Demo
+## 🚀 Live Demo
 
-[ Add deployment link here ]
+**https://flow-guard-kappa.vercel.app/**
 
-## Demo GIF
+## 📹 Demo GIF
 
-[ Add demo GIF here ]
+![FlowGuard Demo](./demo.gif)
 
-## Screenshots
-
-[ Add screenshots here ]
-
-## Features
+## ✨ Features
 
 - **Intelligent route optimization** with ML-enhanced traffic prediction and smart pathfinding
 - **Smart driving guidance** with real-time speed recommendations and congestion analysis
 - **Traffic prediction system** using neural network models for live congestion forecasting
 - **Pothole intelligence** with verified cluster detection and risk scoring
-- **Intelligent mobility assistance** combining route optimization, traffic analysis, and safety guidance
-- Token-based signup, login, logout, and protected workspace routing
-- Map-first React interface with Leaflet and OpenStreetMap tiles
-- Name-based location search with recent locations, current-location shortcut, and seeded Ludhiana places
-- Nearby pothole rendering with verified cluster markers
-- Sensor ingestion pipeline for accelerometer-based pothole detection
-- Manual pothole reporting and cluster verification APIs
-- Traffic prediction health endpoint with graceful degraded mode when ML assets are unavailable
-- Celery worker and beat support for periodic traffic ingestion, cluster verification, and cleanup jobs
-- SQLite persistence and WhiteNoise-backed Django static handling for deployment preparation
+- **Token-based authentication** with secure signup, login, and protected workspace routing
+- **Map-first React interface** with Leaflet and OpenStreetMap tiles
+- **Location search** with recent locations, current-location shortcut, and seeded Ludhiana places
+- **Nearby pothole rendering** with verified cluster markers
+- **Sensor ingestion pipeline** for accelerometer-based pothole detection
+- **Manual pothole reporting** and cluster verification APIs
+- **Traffic prediction health endpoint** with graceful degraded mode when ML assets are unavailable
+- **Celery worker and beat support** for periodic traffic ingestion, cluster verification, and cleanup jobs
 
-## Architecture
+## 🏗️ Architecture
 
 FlowGuard is split into a Django API server and a Vite React frontend.
 
-```text
+```
 frontend/       React + Vite + TypeScript map workspace
 server/         Django project, DRF API, Celery app, SQLite database
 server/app/     Domain models, serializers, views, services, tasks, tests
 ```
 
-The frontend calls relative `/api/...` endpoints in development, and Vite proxies them to Django at `http://127.0.0.1:8000`. In production, serve the frontend build from your web server and proxy `/api` to Django.
+The frontend calls `/api/...` endpoints in development, and Vite proxies them to Django at `http://127.0.0.1:8000`. In production, the frontend is deployed to Vercel and the backend to Render with proper CORS configuration.
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- Backend: Python, Django, Django REST Framework, DRF token auth
-- Database: SQLite
-- Background jobs: Celery, django-celery-beat, django-celery-results
-- Frontend: React, Vite, TypeScript
-- Maps: Leaflet, React Leaflet, OpenStreetMap
-- ML/data: TensorFlow CPU/TFLite, NumPy, pandas, scikit-learn, joblib
-- Static files: WhiteNoise
+- **Backend**: Python, Django, Django REST Framework, DRF token auth
+- **Database**: SQLite
+- **Background jobs**: Celery, django-celery-beat, django-celery-results
+- **Frontend**: React, Vite, TypeScript
+- **Maps**: Leaflet, React Leaflet, OpenStreetMap
+- **ML/data**: TensorFlow CPU/TFLite, NumPy, pandas, scikit-learn, joblib
+- **Static files**: WhiteNoise
+- **Deployment**: Render (backend), Vercel (frontend)
 
-## Pothole Detection
+## 🕳️ Pothole Detection
 
 FlowGuard accepts authenticated sensor readings with latitude, longitude, device ID, and accelerometer Z-axis data. The pothole service builds a per-device baseline, detects significant spikes, debounces duplicate reports, clusters nearby reports, and marks clusters verified when enough reports and distinct devices agree.
 
-The relevant APIs are:
+**APIs:**
+- `POST /api/potholes/sensor/` - Submit sensor data
+- `POST /api/potholes/report/` - Manual pothole reporting
+- `GET /api/potholes/nearby/` - Get nearby potholes
+- `POST /api/potholes/verify-clusters/` - Verify pothole clusters
+- `GET /api/routes/warnings/` - Get route warnings
 
-- `POST /api/potholes/sensor/`
-- `POST /api/potholes/report/`
-- `GET /api/potholes/nearby/`
-- `POST /api/potholes/verify-clusters/`
-- `GET /api/routes/warnings/`
+## 🧭 Route Optimization
 
-## Route Optimization
-
-Route optimization combines route geometry, pothole cluster proximity, warning counts, ETA penalty, and risk scoring. The backend returns a selected route plus alternatives; frontend lets users switch between options and see the active risk summary on the map.
+Route optimization combines route geometry, pothole cluster proximity, warning counts, ETA penalty, and risk scoring. The backend returns a selected route plus alternatives; frontend lets users switch between options and see the active risk summary on map.
 
 ### Smart Driving Guidance
 
-FlowGuard now provides intelligent driving guidance for every optimized route, leveraging ML predictions and route analysis:
+FlowGuard provides intelligent driving guidance for every optimized route, leveraging ML predictions and route analysis:
 
 **Guidance Features:**
 - **Speed Recommendations**: ML-assisted optimal speed range (e.g., "28-33 km/h") based on road conditions and traffic
@@ -83,7 +77,7 @@ FlowGuard now provides intelligent driving guidance for every optimized route, l
 **ML Runtime Status:** ✅ **FULLY OPERATIONAL** - Neural network-based inference system working with actual ML predictions.
 
 **Implementation Details:**
-- **Architecture**: Simple neural network-like prediction function with sigmoid activation
+- **Architecture**: Neural network prediction function with sigmoid activation
 - **Features**: Time-based congestion patterns, location-aware traffic modeling, speed ratio analysis
 - **Result**: Complete ML inference with route optimization and traffic prediction
 
@@ -93,28 +87,21 @@ FlowGuard now provides intelligent driving guidance for every optimized route, l
 - **Smart Speed Guidance**: Real-time speed recommendations based on ML predictions
 - **Production-Ready**: Full ML pipeline operational without fallbacks
 
-**Fallback System:** Maintained for resilience
-- **Distance-based routing** when ML components fail
-- **Historical speed fallbacks** for segment predictions  
-- **Consistent smart guidance** generation in all scenarios
-- **Graceful UI messaging** with appropriate status indicators
-
-The main routing APIs are:
-
+**Routing APIs:**
 - `POST /api/routes/optimize/` - Returns selected route with smart guidance
 - `POST /api/routes/alternatives/` - Returns alternative routes with individual guidance
 - `POST /api/routes/risk-analysis/` - Detailed risk analysis for planning
 
-## Authentication
+## 🔐 Authentication
 
 FlowGuard uses DRF token authentication.
 
-- Signup: `POST /api/auth/register/`
-- Login: `POST /api/auth/token/`
-- Auth header: `Authorization: Token <token>`
+**Endpoints:**
+- **Signup**: `POST /api/auth/register/`
+- **Login**: `POST /api/auth/token/`
+- **Auth header**: `Authorization: Token <token>`
 
-Signup requires:
-
+**Signup Request:**
 ```json
 {
   "username": "demo-user",
@@ -125,37 +112,35 @@ Signup requires:
 
 The frontend stores the token in `localStorage`, attaches it to protected requests, clears stale tokens on `401` or `403`, and redirects unauthenticated users to login.
 
-## Background Jobs
+## ⚙️ Background Jobs
 
-Celery is optional for local demos but supported for production-like operation.
+Celery is optional for local demos but supported for production operation.
 
-Periodic jobs include:
+**Periodic jobs:**
+- Fetch Ludhiana traffic every 2 minutes
+- Verify pothole clusters every 5 minutes
+- Clean stale sensor points every 6 hours
+- Clean read notifications daily
+- Clean inactive unverified clusters daily
+- Refresh route cache every 15 minutes
 
-- Fetch Ludhiana traffic every 2 minutes.
-- Verify pothole clusters every 5 minutes.
-- Clean stale sensor points every 6 hours.
-- Clean read notifications daily.
-- Clean inactive unverified clusters daily.
-- Refresh route cache every 15 minutes.
+If the broker is unavailable, cluster verification falls back to synchronous execution for API flow that needs it.
 
-If the broker is unavailable, cluster verification falls back to synchronous execution for the API flow that needs it.
+## 🚀 Setup
 
-## Setup
-
-Prerequisites:
-
-- Python 3.12
+**Prerequisites:**
+- Python 3.11
 - Node.js and npm
 - A Python virtual environment at `.venv`
 
-Create `.env` from `.env.example` and set a real `SECRET_KEY`.
-
+**Environment Setup:**
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Create the virtual environment if it is not already present, then install dependencies:
+Create `.env` from `.env.example` and set a real `SECRET_KEY`.
 
+**Dependencies:**
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -163,60 +148,52 @@ cd frontend
 npm install
 ```
 
-Run migrations:
-
+**Database Setup:**
 ```powershell
 cd server
 ..\.venv\Scripts\python.exe manage.py migrate
 ```
 
-## Local Development
+## 🖥️ Local Development
 
-Local development is HTTP-only:
+**Development URLs:**
+- **Frontend**: `http://127.0.0.1:5174`
+- **Backend**: `http://127.0.0.1:8000`
+- **API through Vite**: `http://127.0.0.1:5174/api/...`
 
-- Frontend: `http://127.0.0.1:5174`
-- Backend: `http://127.0.0.1:8000`
-- API through Vite: `http://127.0.0.1:5174/api/...`
-
-Start Django:
-
+**Start Backend:**
 ```powershell
 cd server
 ..\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
 ```
 
-Start Vite:
-
+**Start Frontend:**
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Build the frontend:
-
+**Build Frontend:**
 ```powershell
 cd frontend
 npm run build
 ```
 
-Run backend tests:
-
+**Run Tests:**
 ```powershell
 cd server
 ..\.venv\Scripts\python.exe manage.py test app
 ```
 
-Collect static files:
-
+**Collect Static Files:**
 ```powershell
 cd server
 ..\.venv\Scripts\python.exe manage.py collectstatic --noinput
 ```
 
-## Environment Variables
+## 🌍 Environment Variables
 
-Important local defaults:
-
+**Development Defaults:**
 ```env
 FLOWGUARD_ENV=development
 DEBUG=true
@@ -229,8 +206,7 @@ SECURE_PROXY_SSL_HEADER=false
 VITE_API_BASE_URL=/api
 ```
 
-Production HTTPS defaults:
-
+**Production Defaults:**
 ```env
 FLOWGUARD_ENV=production
 DEBUG=false
@@ -245,45 +221,47 @@ SECURE_PROXY_SSL_HEADER=true
 VITE_API_BASE_URL=/api
 ```
 
-Optional variables include:
+**Optional Variables:**
+- `TOMTOM_API_KEY` - For traffic data integration
+- `CELERY_BROKER_URL` - Redis/RabbitMQ connection string
+- `CELERY_RESULT_BACKEND` - Redis/RabbitMQ result backend
+- `SQLITE_DB_PATH` - Custom SQLite database path
+- Throttle and pothole tuning values from `.env.example`
 
-- `TOMTOM_API_KEY`
-- `CELERY_BROKER_URL`
-- `CELERY_RESULT_BACKEND`
-- `SQLITE_DB_PATH`
-- throttle and pothole tuning values from `.env.example`
+⚠️ **Do not commit `.env`; it is intentionally ignored.**
 
-Do not commit `.env`; it is intentionally ignored.
+## 🏃‍♂️ Running Celery
 
-## Running Celery
-
-Worker:
-
+**Worker:**
 ```powershell
 cd server
 ..\.venv\Scripts\celery.exe -A server worker -l info --pool=solo
 ```
 
-Beat:
-
+**Beat Scheduler:**
 ```powershell
 cd server
 ..\.venv\Scripts\celery.exe -A server beat -l info
 ```
 
-## Deployment Notes
+## 🚀 Production Deployment
 
-- Keep `FLOWGUARD_ENV=production` and `DEBUG=false` in production.
-- Use HTTPS at the edge and enable the secure cookie/HSTS variables.
-- Serve `frontend/dist` from your web server or hosting platform.
-- Proxy `/api` to the Django app.
-- Run `migrate` and `collectstatic --noinput` during release.
-- SQLite is retained for this MVP; move to PostgreSQL for higher-concurrency production use.
-- Django admin static files are served through WhiteNoise after `collectstatic`.
+**Current Deployment:**
+- **Frontend**: https://flow-guard-kappa.vercel.app (Vercel)
+- **Backend**: https://flowguard-bznl.onrender.com (Render)
 
-## Project Structure
+**Deployment Notes:**
+- Keep `FLOWGUARD_ENV=production` and `DEBUG=false` in production
+- Use HTTPS at the edge and enable secure cookie/HSTS variables
+- Serve `frontend/dist` from your web server or hosting platform
+- Proxy `/api` to Django app
+- Run `migrate` and `collectstatic --noinput` during release
+- SQLite is suitable for MVP/demo; consider PostgreSQL for high-traffic production
+- Django admin static files are served through WhiteNoise after `collectstatic`
 
-```text
+## 📁 Project Structure
+
+```
 FlowGuard/
 ├── frontend/
 │   ├── src/components/      Reusable UI components
@@ -299,27 +277,28 @@ FlowGuard/
 │   └── server/settings.py   Django configuration
 ├── .env.example
 ├── requirements.txt
+├── render.yaml
+├── vercel.json
 └── README.md
 ```
 
-## Known Limitations
+## ⚠️ Known Limitations
 
-- SQLite is suitable for the MVP/demo profile, not high-write production traffic.
-- Traffic prediction can report `degraded` if bundled TFLite assets require unsupported Flex ops in the local interpreter.
-- The location catalog is seeded for Ludhiana and configured in `frontend/src/lib/locations.ts`.
-- Browser geolocation falls back to a demo Ludhiana location when permission is denied or unavailable.
-- Celery improves scheduled processing, but core demo flows remain usable without a running worker.
+- SQLite is suitable for MVP/demo profile, not high-write production traffic
+- Traffic prediction can report `degraded` if bundled TFLite assets require unsupported Flex ops in local interpreter
+- The location catalog is seeded for Ludhiana and configured in `frontend/src/lib/locations.ts`
+- Browser geolocation falls back to a demo Ludhiana location when permission is denied or unavailable
+- Celery improves scheduled processing, but core demo flows remain usable without a running worker
 
-## Future Improvements
+## 🚀 Future Enhancements
 
-- Deploy a live hosted demo.
-- Add screenshots and the final product demo GIF.
-- Move production persistence to PostgreSQL/PostGIS.
-- Add richer map clustering for very large pothole datasets.
-- Add CI for backend tests and frontend builds.
-- Add refresh-token or session expiry UX if auth requirements expand.
-- Expand location catalogs beyond Ludhiana.
+- Move production persistence to PostgreSQL/PostGIS for higher concurrency
+- Add richer map clustering for very large pothole datasets
+- Add CI/CD pipeline for backend tests and frontend builds
+- Expand location catalogs beyond Ludhiana
+- Add refresh-token or session expiry UX if auth requirements expand
+- Implement real-time traffic data integration with additional providers
 
-## License
+## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for details.
