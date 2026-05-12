@@ -26,7 +26,7 @@ DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
 FLOWGUARD_ENV = os.getenv('FLOWGUARD_ENV', 'development').strip().lower()
 IS_PRODUCTION = FLOWGUARD_ENV == 'production'
 
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,flowguard-bznl.onrender.com,flow-guard-kappa.vercel.app').split(',') if h.strip()]
 
 SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
 SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'app.apps.AppConfig',
     'rest_framework',
     'rest_framework.authtoken',
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'app.middleware.RequestAuditMiddleware',
@@ -250,3 +252,14 @@ WHITENOISE_USE_FINDERS = DEBUG
 WHITENOISE_AUTOREFRESH = DEBUG
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# CORS Configuration
+CORS_ALLOWED_ORIGINS = [
+    "https://flow-guard-kappa.vercel.app",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://flow-guard-kappa.vercel.app",
+]
