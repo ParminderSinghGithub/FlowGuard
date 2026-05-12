@@ -1,5 +1,9 @@
 """Django settings for FlowGuard server."""
 
+# STARTUP DIAGNOSTICS - Identify active settings file
+print("ACTIVE SETTINGS FILE:", __file__)
+print("DEBUG DJANGO_SETTINGS_MODULE =", os.environ.get("DJANGO_SETTINGS_MODULE"))
+
 from pathlib import Path
 from kombu import Queue
 from celery.schedules import crontab
@@ -26,13 +30,15 @@ DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
 FLOWGUARD_ENV = os.getenv('FLOWGUARD_ENV', 'development').strip().lower()
 IS_PRODUCTION = FLOWGUARD_ENV == 'production'
 
-ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS",
-    "flowguard-bznl.onrender.com,flow-guard-kappa.vercel.app,localhost,127.0.0.1"
-).split(",")
+# HARDCODED ALLOWED_HOSTS - No environment variable parsing
+ALLOWED_HOSTS = [
+    "flowguard-bznl.onrender.com",
+    "flow-guard-kappa.vercel.app",
+    "localhost",
+    "127.0.0.1",
+]
 
-# Temporary debugging - confirm runtime values
-print("DEBUG ALLOWED_HOSTS:", ALLOWED_HOSTS)
+print("DEBUG ALLOWED_HOSTS =", ALLOWED_HOSTS)
 
 SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
 SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
