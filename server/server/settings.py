@@ -28,6 +28,13 @@ IS_PRODUCTION = FLOWGUARD_ENV == 'production'
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,flowguard-bznl.onrender.com,flow-guard-kappa.vercel.app').split(',') if h.strip()]
 
+# Temporary debugging - confirm runtime values
+print("=== FLOWGUARD DEBUG INFO ===")
+print(f"ALLOWED_HOSTS env var: {os.getenv('ALLOWED_HOSTS')}")
+print(f"Final ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print(f"DJANGO_SETTINGS_MODULE: {os.getenv('DJANGO_SETTINGS_MODULE', 'not set')}")
+print("========================")
+
 SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
 SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
 CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'true' if IS_PRODUCTION else 'false').lower() == 'true'
