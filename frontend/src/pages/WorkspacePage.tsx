@@ -144,13 +144,13 @@ export function WorkspacePage() {
   const [destinationSelection, setDestinationSelection] = useState<SelectedLocation | null>(toSelectedLocation(defaultDestination));
 
   useEffect(() => {
-    void getJson<PredictionHealthResponse>('/predict/health/')
+    void getJson<PredictionHealthResponse>('/api/predict/health/')
       .then(setHealth)
       .catch(() => {
         setHealth({ model_ready: false, status: 'unavailable' });
       });
 
-    void postJson<TrafficPredictionResponse>('/predict/')
+    void postJson<TrafficPredictionResponse>('/api/predict/')
       .then(setTraffic)
       .catch(() => {
         setTraffic(null);
@@ -188,8 +188,8 @@ export function WorkspacePage() {
     const timer = window.setTimeout(() => {
       setMapLoading(true);
       Promise.all([
-        getJson<unknown>(`/potholes/nearby/?latitude=${location.latitude}&longitude=${location.longitude}&radius_meters=400`),
-        getJson<unknown>(`/routes/warnings/?latitude=${location.latitude}&longitude=${location.longitude}&radius_meters=500`),
+        getJson<unknown>(`/api/potholes/nearby/?latitude=${location.latitude}&longitude=${location.longitude}&radius_meters=400`),
+        getJson<unknown>(`/api/routes/warnings/?latitude=${location.latitude}&longitude=${location.longitude}&radius_meters=500`),
       ])
         .then(([nearby, warnings]) => {
           setPotholes(normalizeNearbyPotholes(nearby, location));
@@ -323,7 +323,7 @@ export function WorkspacePage() {
     };
 
     try {
-      const optimized = await postJson<RouteOptimizationResponse>('/routes/optimize/', requestBody);
+      const optimized = await postJson<RouteOptimizationResponse>('/api/routes/optimize/', requestBody);
       setRouteResult(optimized);
       setSelectedRouteIndex(0);
     } catch (caughtError) {
