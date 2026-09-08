@@ -36,25 +36,45 @@ export function LoginPage() {
   return (
     <main className="auth-screen">
       <section className="hero-card">
-        <p className="eyebrow">{APP_NAME}</p>
-        <h1>Welcome back to intelligent navigation.</h1>
-        <p className="muted">Access your smart route optimization, traffic predictions, and personalized driving guidance.</p>
+        <div className="auth-brand-badge">
+          <svg className="auth-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <span className="eyebrow">{APP_NAME}</span>
+        </div>
+
+        <h1>Welcome back</h1>
+        <p className="muted">Access intelligent route optimization, real-time road hazard telemetry, and driving guidance.</p>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
             Username
-            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required />
+            <input
+              placeholder="Enter your username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              required
+            />
           </label>
           <label>
             Password
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
           </label>
 
           {error ? <ErrorBanner error={error} /> : null}
-          {loading ? <LoadingPanel title="Signing in" /> : null}
+          {loading ? <LoadingPanel title="Signing in" description="Authenticating credentials..." /> : null}
 
           <button className="button button-primary" type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? 'Signing in...' : 'Sign in to Platform'}
           </button>
         </form>
 

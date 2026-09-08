@@ -42,29 +42,56 @@ export function SignupPage() {
   return (
     <main className="auth-screen">
       <section className="hero-card auth-card">
-        <p className="eyebrow">{APP_NAME}</p>
-        <h1>Begin your intelligent journey.</h1>
-        <p className="muted">Experience smart route optimization with traffic prediction and road intelligence for safer urban navigation.</p>
+        <div className="auth-brand-badge">
+          <svg className="auth-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <span className="eyebrow">{APP_NAME}</span>
+        </div>
+
+        <h1>Create account</h1>
+        <p className="muted">Join the intelligent navigation grid with AI-predicted traffic and live road quality intelligence.</p>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
             Username
-            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required />
+            <input
+              placeholder="Choose a username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              required
+            />
           </label>
           <label>
             Password
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
+            <input
+              type="password"
+              placeholder="At least 8 characters"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
           </label>
           <label>
             Confirm password
-            <input type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" required />
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={passwordConfirmation}
+              onChange={(event) => setPasswordConfirmation(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
           </label>
 
           {error ? <ErrorBanner error={error} /> : null}
-          {loading ? <LoadingPanel title="Creating account" /> : null}
+          {loading ? <LoadingPanel title="Creating account" description="Provisioning workspace credentials..." /> : null}
 
           <button className="button button-primary" type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
+            {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
 

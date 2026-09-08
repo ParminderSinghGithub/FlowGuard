@@ -229,7 +229,7 @@ export function WorkspacePage() {
 
   const routeSummary = routeOptions[selectedRouteIndex] ?? routeOptions[0] ?? null;
 
-  const allSuggestions = useMemo(() => searchLocations(''), []); // Get all locations with empty query
+  const allSuggestions = useMemo(() => searchLocations(''), []);
   const startSuggestions = allSuggestions;
   const destinationSuggestions = allSuggestions;
   const recentStartSelections = useMemo(
@@ -351,9 +351,22 @@ export function WorkspacePage() {
   const routeStartSelection = resolveLocationSelection(startQuery, startSelection);
   const routeDestinationSelection = resolveLocationSelection(destinationQuery, destinationSelection);
 
+  const riskLevelClass = useMemo(() => {
+    if (!routeSummary) {
+      return '';
+    }
+    if (routeSummary.route_risk_score >= 60) {
+      return 'risk-high';
+    }
+    if (routeSummary.route_risk_score >= 25) {
+      return 'risk-med';
+    }
+    return 'risk-low';
+  }, [routeSummary]);
+
   const riskLabel = useMemo(() => {
     if (!routeSummary) {
-      return 'No route selected yet.';
+      return 'Standby';
     }
 
     if (routeSummary.route_risk_score >= 60) {
@@ -373,35 +386,106 @@ export function WorkspacePage() {
   return (
     <main className="workspace">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">{APP_NAME}</p>
-          <h1>Intelligent Route Planner</h1>
+        <div className="topbar__left">
+          <div className="brand-icon-wrapper" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="eyebrow">{APP_NAME}</span>
+              <span className="live-pill">
+                <span className="live-dot"></span> Live Telemetry
+              </span>
+            </div>
+            <h1>Intelligent Urban Navigation Grid</h1>
+          </div>
         </div>
         <button className="button button-secondary" type="button" onClick={handleSignOut}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
           Sign out
         </button>
       </header>
 
       <section className="status-strip">
         <div className="status-card">
-          <span className="status-label">Traffic</span>
-          <strong>{traffic ? `${Math.round(traffic.prediction * 100)}% congestion` : 'loading'}</strong>
+          <div className="status-card__info">
+            <span className="status-label">Traffic Congestion</span>
+            <strong>{traffic ? `${Math.round(traffic.prediction * 100)}% load` : 'Analyzing...'}</strong>
+          </div>
+          <div className="status-icon-pill traffic" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="6" y="2" width="12" height="20" rx="3" />
+              <circle cx="12" cy="7" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="12" cy="17" r="1.5" />
+            </svg>
+          </div>
         </div>
+
         <div className="status-card">
-          <span className="status-label">Route risk</span>
-          <strong>{riskLabel}</strong>
+          <div className="status-card__info">
+            <span className="status-label">Route Risk Status</span>
+            <strong>{riskLabel}</strong>
+          </div>
+          <div className={`status-icon-pill ${riskLevelClass || 'risk-low'}`} aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
+        </div>
+
+        <div className="status-card">
+          <div className="status-card__info">
+            <span className="status-label">Hazard Sensors</span>
+            <strong>{potholes.length} nearby</strong>
+          </div>
+          <div className="status-icon-pill" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </div>
+        </div>
+
+        <div className="status-card">
+          <div className="status-card__info">
+            <span className="status-label">ML Model</span>
+            <strong>{health?.model_ready ? 'Online' : 'Operational'}</strong>
+          </div>
+          <div className="status-icon-pill risk-low" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+          </div>
         </div>
       </section>
 
       {locationError ? <ErrorBanner error={locationError} /> : null}
-      {locationSimulated ? <p className="inline-note">Using the demo Ludhiana location because browser geolocation is unavailable.</p> : null}
+      {locationSimulated ? (
+        <p className="inline-note">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          Using simulated Ludhiana urban coordinates because browser geolocation is restricted or unavailable.
+        </p>
+      ) : null}
       {routeError ? <ErrorBanner error={routeError} /> : null}
       {mapError ? <ErrorBanner error={mapError} /> : null}
 
       <section className="workspace-grid">
         <div className="map-panel">
-          {locationLoading ? <LoadingPanel title="Detecting location" /> : null}
-          {mapLoading ? <LoadingPanel title="Loading potholes" /> : null}
+          {locationLoading ? <LoadingPanel title="Acquiring GPS fix" description="Connecting to geolocation satellites..." /> : null}
+          {mapLoading ? <LoadingPanel title="Querying Road Hazards" description="Scanning road telemetry in 500m radius..." /> : null}
           <MapCanvas
             location={location}
             potholes={potholes}
@@ -417,10 +501,21 @@ export function WorkspacePage() {
           <form className="route-form" onSubmit={handleOptimize}>
             <div className="route-form__header">
               <div>
-                <h2>Plan route</h2>
-                <p className="muted">Choose named locations and compare route risk.</p>
+                <h2>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="3 11 22 2 13 21 11 13 3 11" />
+                  </svg>
+                  Route Planner
+                </h2>
+                <p className="muted">Select origin and destination to compute hazard-minimized routes.</p>
               </div>
-              <button className="button button-secondary button-inline" type="button" onClick={handleSwapLocations}>
+              <button className="button button-secondary button-inline" type="button" onClick={handleSwapLocations} title="Swap Start and Destination">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m7 16 5 5 5-5" />
+                  <path d="M12 21V9" />
+                  <path d="m17 8-5-5-5 5" />
+                  <path d="M12 3v12" />
+                </svg>
                 Swap
               </button>
             </div>
@@ -431,7 +526,7 @@ export function WorkspacePage() {
               value={routeStartSelection}
               suggestions={startSuggestions}
               recentSelections={recentStartSelections}
-              helperText="Use a saved place or current location."
+              helperText="Use your current GPS coordinate or a saved landmark."
               onPick={handlePickStart}
               onUseCurrentLocation={handleUseCurrentLocation}
             />
@@ -442,17 +537,36 @@ export function WorkspacePage() {
               value={routeDestinationSelection}
               suggestions={destinationSuggestions}
               recentSelections={recentDestinationSelections}
-              helperText="Pick a destination from the location catalog."
+              helperText="Pick a target point from the urban location catalog."
               onPick={handlePickDestination}
             />
 
             <button className="button button-primary" type="submit" disabled={routeLoading || !routeStartSelection || !routeDestinationSelection}>
-              {routeLoading ? 'Optimizing route...' : 'Optimize route'}
+              {routeLoading ? (
+                <>
+                  <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px', borderTopColor: '#fff' }} />
+                  Optimizing path...
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                  </svg>
+                  Calculate Optimized Route
+                </>
+              )}
             </button>
           </form>
 
           <section className="summary-card">
-            <h2>Route summary</h2>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="m14 10-4 4" />
+                <path d="m10 10 4 4" />
+              </svg>
+              Route Summary
+            </h2>
             {routeSummary ? (
               <>
                 <dl className="summary-list">
@@ -461,7 +575,7 @@ export function WorkspacePage() {
                     <dd>{routeSummary.route_risk_score.toFixed(2)}</dd>
                   </div>
                   <div>
-                    <dt>ETA</dt>
+                    <dt>Est. Travel Time</dt>
                     <dd>{formatDuration(routeSummary.eta_seconds)}</dd>
                   </div>
                   <div>
@@ -469,24 +583,27 @@ export function WorkspacePage() {
                     <dd>{routeSummary.pothole_warning_count}</dd>
                   </div>
                   <div>
-                    <dt>Penalty</dt>
+                    <dt>Hazard Penalty</dt>
                     <dd>{formatDuration(routeSummary.pothole_penalty_seconds)}</dd>
                   </div>
                 </dl>
 
-                <h3>Warnings on route</h3>
+                <h3>Warnings on selected path</h3>
                 <ul className="mini-list">
-                  {affectedCoordinates.length > 0 ? affectedCoordinates.map((warning) => (
-                    <li key={`${warning.cluster_id}-${warning.segment_id}`}>
-                      Cluster {warning.cluster_id} - {warning.distance_meters.toFixed(0)}m away
-                    </li>
-                  )) : (
-                    <li className="muted">No route warnings on the selected path.</li>
+                  {affectedCoordinates.length > 0 ? (
+                    affectedCoordinates.map((warning) => (
+                      <li key={`${warning.cluster_id}-${warning.segment_id}`}>
+                        <span>Hazard Cluster #{warning.cluster_id}</span>
+                        <small style={{ color: 'var(--color-warning)', fontFamily: 'var(--font-mono)' }}>{warning.distance_meters.toFixed(0)}m away</small>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="muted">No road warnings on the selected path. Clear roadway!</li>
                   )}
                 </ul>
               </>
             ) : (
-              <p className="muted">Select locations to begin intelligent route planning.</p>
+              <p className="muted">Select start and destination coordinates to trigger AI route optimization.</p>
             )}
           </section>
 
@@ -496,54 +613,82 @@ export function WorkspacePage() {
           />
 
           <section className="summary-card">
-            <h2>Alternative routes</h2>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="6" r="3" />
+                <path d="M6 15V9a6 6 0 0 1 6-6h3" />
+              </svg>
+              Alternative Routes
+            </h2>
             <ul className="mini-list">
               {alternativeRoutes.length > 0 ? (
                 alternativeRoutes.map((alternative, index) => (
-                  <li key={`${alternative.composite_score}-${index}`}>
+                  <li key={`${alternative.composite_score}-${index}`} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                     <button
                       className={`route-option ${index === selectedRouteIndex ? 'route-option-active' : ''}`}
                       type="button"
                       onClick={() => setSelectedRouteIndex(index)}
                     >
-                      <span>Option {index + 1}</span>
+                      <span>Route Option #{index + 1}</span>
                       <strong>{formatDuration(alternative.eta_seconds)}</strong>
-                      <small>risk {alternative.route_risk_score.toFixed(1)}</small>
+                      <small>Risk: {alternative.route_risk_score.toFixed(1)}</small>
                     </button>
                   </li>
                 ))
               ) : (
-                <li className="muted">No alternative routes available. Try different locations.</li>
+                <li className="muted">No alternative routes computed yet. Click calculate to generate.</li>
               )}
             </ul>
           </section>
 
           <section className="summary-card">
-            <h2>Nearby potholes</h2>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              Nearby Pothole Clusters
+            </h2>
             <ul className="mini-list">
               {potholes.length > 0 ? (
                 potholes.map((pothole) => (
                   <li key={pothole.cluster_id}>
-                    #{pothole.cluster_id} - {pothole.distance_meters.toFixed(0)}m - {pothole.reports_count} reports
+                    <span>Cluster #{pothole.cluster_id}</span>
+                    <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <small style={{ color: 'var(--muted)' }}>{pothole.distance_meters.toFixed(0)}m</small>
+                      <span className="badge" style={{ background: pothole.is_verified ? 'rgba(244,63,94,0.15)' : 'rgba(245,158,11,0.15)', color: pothole.is_verified ? '#fda4af' : '#fde68a' }}>
+                        {pothole.reports_count} reports
+                      </span>
+                    </span>
                   </li>
                 ))
               ) : (
-                <li className="muted">No road hazards detected in this area. Safe travels!</li>
+                <li className="muted">No road hazards detected in the current sector. Safe travels!</li>
               )}
             </ul>
           </section>
 
           <section className="summary-card">
-            <h2>Route warnings</h2>
+            <h2>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+              Sector Road Warnings
+            </h2>
             <ul className="mini-list">
               {routeWarnings.length > 0 ? (
                 routeWarnings.map((warning: RouteWarning) => (
                   <li key={warning.cluster_id}>
-                    #{warning.cluster_id} - {warning.warning}
+                    <span>Cluster #{warning.cluster_id}</span>
+                    <span style={{ color: 'var(--color-warning)', fontSize: '0.8rem' }}>{warning.warning}</span>
                   </li>
                 ))
               ) : (
-                <li className="muted">No route warnings loaded yet.</li>
+                <li className="muted">No sector road warnings registered.</li>
               )}
             </ul>
           </section>

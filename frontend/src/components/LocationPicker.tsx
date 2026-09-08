@@ -31,11 +31,11 @@ export function LocationPicker({
     if (onUseCurrentLocation) {
       options.push({
         id: 'current-location',
-        label: 'Use current location',
-        category: 'GPS',
+        label: 'Use current GPS location',
+        category: 'Live GPS',
         isCurrentLocation: true,
         latitude: 0,
-        longitude: 0
+        longitude: 0,
       });
     }
     
@@ -68,9 +68,23 @@ export function LocationPicker({
             type="button"
             className="location-picker__trigger"
             onClick={() => setIsOpen(!isOpen)}
+            aria-expanded={isOpen}
           >
-            {value ? value.label : placeholder}
-            <span className="location-picker__arrow">▼</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary-glow)', flexShrink: 0 }}>
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {value ? value.label : placeholder}
+              </span>
+            </div>
+            <span
+              className="location-picker__arrow"
+              style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            >
+              ▼
+            </span>
           </button>
           
           {isOpen && (
@@ -83,7 +97,13 @@ export function LocationPicker({
                     className="location-picker__item"
                     onClick={() => handleSelect(location)}
                   >
-                    <strong>{location.label}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--muted)', flexShrink: 0 }}>
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                      <strong>{location.label}</strong>
+                    </div>
                     <span>{location.category}</span>
                   </button>
                 ))}
